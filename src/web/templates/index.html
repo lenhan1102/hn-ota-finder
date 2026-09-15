@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NDC Leads & OTA Finder Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-base: #0a0e1a;
+      --bg-surface: #111827;
+      --bg-card: rgba(17, 24, 39, 0.75);
+      --bg-card-hover: rgba(31, 41, 55, 0.8);
+      --border: rgba(255, 255, 255, 0.08);
+      --border-active: #6366f1;
+      --primary: #6366f1;
+      --primary-hover: #4f46e5;
+      --primary-gradient: linear-gradient(135deg, #6366f1 0%, #38bdf8 100%);
+      --accent: #38bdf8;
+      --text-main: #f8fafc;
+      --text-sub: #94a3b8;
+      --text-dim: #64748b;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --radius: 14px;
+      --radius-sm: 8px;
+      --shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+      --shadow-glow: 0 0 25px -5px rgba(99, 102, 241, 0.35);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.12) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(56, 189, 248, 0.1) 0px, transparent 50%);
+      background-attachment: fixed;
+    }
+
+    /* Header */
+    header {
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(12px);
+      background: rgba(10, 14, 26, 0.8);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      padding: 16px 24px;
+    }
+
+    .header-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-icon {
+      width: 44px;
+      height: 44px;
+      background: var(--primary-gradient);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      box-shadow: var(--shadow-glow);
+    }
+
+    .brand-text h1 {
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      background: linear-gradient(135deg, #fff 40%, #94a3b8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .brand-text p {
+      font-size: 12px;
+      color: var(--text-sub);
+    }
+
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.2);
+      color: var(--success);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--success);
+      box-shadow: 0 0 10px var(--success);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.85); }
+    }
+
+    /* Main Container */
+    main {
+      flex: 1;
+      max-width: 1200px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 28px 20px 60px;
+    }
+
+    /* Navigation Tabs */
+    .tabs-nav {
+      display: flex;
+      gap: 8px;
+      background: rgba(17, 24, 39, 0.6);
+      padding: 6px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      margin-bottom: 24px;
+      overflow-x: auto;
+    }
+
+    .tab-btn {
+      flex: 1;
+      min-width: 180px;
+      padding: 12px 18px;
+      background: transparent;
+      border: none;
+      color: var(--text-sub);
+      font-size: 14px;
+      font-weight: 600;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .tab-btn:hover {
+      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .tab-btn.active {
+      background: var(--primary);
+      color: #fff;
+      box-shadow: var(--shadow-glow);
+    }
+
+    .badge-count {
+      padding: 2px 7px;
+      font-size: 11px;
+      border-radius: 9999px;
+      background: rgba(0, 0, 0, 0.3);
+    }
+
+    /* Tab Content Panels */
+    .tab-pane {
+      display: none;
+      animation: fadeIn 0.25s ease forwards;
+    }
+
+    .tab-pane.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Cards */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      backdrop-filter: blur(16px);
+      box-shadow: var(--shadow);
+      margin-bottom: 24px;
+    }
+
+    .card-header {
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .card-title {
+      font-size: 16px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* Form Styles */
+    .form-group {
+      margin-bottom: 18px;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-sub);
+      margin-bottom: 8px;
+    }
+
+    .form-control {
+      width: 100%;
+      padding: 12px 14px;
+      background: rgba(10, 14, 26, 0.6);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text-main);
+      font-size: 14px;
+      font-family: inherit;
+      transition: all 0.2s ease;
+    }
+
+    .form-control:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+    }
+
+    textarea.form-control {
+      min-height: 100px;
+      resize: vertical;
+      line-height: 1.5;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+    }
+
+    .helper-text {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-top: 5px;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 12px 22px;
+      font-size: 14px;
+      font-weight: 700;
+      border-radius: var(--radius-sm);
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-decoration: none;
+    }
+
+    .btn-primary {
+      background: var(--primary-gradient);
+      color: #fff;
+      box-shadow: var(--shadow-glow);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 0 30px -3px rgba(99, 102, 241, 0.5);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .btn-danger {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+      color: var(--danger);
+      padding: 6px 12px;
+      font-size: 12px;
+    }
+
+    .btn-danger:hover {
+      background: var(--danger);
+      color: #fff;
+    }
+
+    .btn-sm {
+      padding: 8px 14px;
+      font-size: 12px;
+    }
+
+    /* Accordion Settings */
+    details.advanced-box {
+      background: rgba(10, 14, 26, 0.4);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 14px 18px;
+      margin-bottom: 20px;
+    }
+
+    details.advanced-box summary {
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-sub);
+      user-select: none;
+    }
+
+    details.advanced-box[open] summary {
+      margin-bottom: 16px;
+      color: var(--accent);
+    }
+
+    /* Job Card */
+    .job-card {
+      background: rgba(17, 24, 39, 0.6);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 16px;
+      transition: all 0.2s ease;
+    }
+
+    .job-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+
+    .job-tag {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .tag-pending { background: rgba(148, 163, 184, 0.15); color: #cbd5e1; }
+    .tag-running { background: rgba(99, 102, 241, 0.2); color: #818cf8; animation: pulse 2s infinite; }
+    .tag-completed { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+    .tag-failed { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+
+    /* Progress Bar */
+    .progress-track {
+      width: 100%;
+      height: 10px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 9999px;
+      overflow: hidden;
+      margin: 12px 0;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: var(--primary-gradient);
+      border-radius: 9999px;
+      transition: width 0.4s ease;
+    }
+
+    /* Stepper */
+    .steps-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin: 16px 0;
+      gap: 6px;
+    }
+
+    .step-node {
+      flex: 1;
+      text-align: center;
+      padding: 8px 4px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-dim);
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border);
+      transition: all 0.2s ease;
+    }
+
+    .step-node.done {
+      background: rgba(16, 185, 129, 0.1);
+      border-color: rgba(16, 185, 129, 0.3);
+      color: var(--success);
+    }
+
+    .step-node.current {
+      background: rgba(99, 102, 241, 0.15);
+      border-color: var(--primary);
+      color: #fff;
+      box-shadow: 0 0 10px rgba(99, 102, 241, 0.2);
+    }
+
+    /* Log Box */
+    .log-box {
+      background: #060911;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: var(--radius-sm);
+      padding: 12px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      color: #94a3b8;
+      max-height: 140px;
+      overflow-y: auto;
+      line-height: 1.6;
+      margin-top: 12px;
+    }
+
+    /* File Table */
+    .table-container {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+
+    th {
+      padding: 12px 16px;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text-sub);
+      border-bottom: 1px solid var(--border);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    td {
+      padding: 16px;
+      font-size: 13px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+    }
+
+    tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .file-name {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 600;
+    }
+
+    .file-icon {
+      color: #10b981;
+      font-size: 18px;
+    }
+
+    /* Empty State */
+    .empty-state {
+      text-align: center;
+      padding: 48px 20px;
+      color: var(--text-dim);
+    }
+
+    .empty-state-icon {
+      font-size: 44px;
+      margin-bottom: 12px;
+      opacity: 0.6;
+    }
+
+    /* Toast Notification */
+    .toast-container {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .toast {
+      background: #1e293b;
+      border: 1px solid var(--border);
+      color: #fff;
+      padding: 12px 20px;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      box-shadow: var(--shadow);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      animation: slideIn 0.3s ease;
+    }
+
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="header-container">
+      <div class="brand">
+        <div class="brand-icon">✈️</div>
+        <div class="brand-text">
+          <h1>NDC LEADS & OTA FINDER</h1>
+          <p>Hệ thống tự động tìm kiếm & thẩm định đại lý vé máy bay từ Google Maps</p>
+        </div>
+      </div>
+      <div class="status-badge">
+        <div class="status-dot"></div>
+        <span>Hệ thống sẵn sàng</span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Navigation Tabs -->
+    <div class="tabs-nav">
+      <button class="tab-btn active" onclick="switchTab('tab-search')">
+        <span>🔍</span> Tìm kiếm mới
+      </button>
+      <button class="tab-btn" onclick="switchTab('tab-jobs')">
+        <span>⚡</span> Tiến độ đang chạy <span class="badge-count" id="activeJobsBadge">0</span>
+      </button>
+      <button class="tab-btn" onclick="switchTab('tab-files')">
+        <span>📁</span> File kết quả Excel <span class="badge-count" id="filesBadge">0</span>
+      </button>
+    </div>
+
+    <!-- TAB 1: TÌM KIẾM MỚI -->
+    <div id="tab-search" class="tab-pane active">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span>🎯</span> Khởi Tạo Chiến Dịch Tìm Kiếm
+          </div>
+        </div>
+
+        <form id="searchForm" onsubmit="submitSearch(event)">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="countrySelect">1. Chọn thị trường / Quốc gia có sẵn:</label>
+              <select id="countrySelect" class="form-control" onchange="onCountryChange()">
+                {% for c in countries %}
+                <option value="{{ c }}" {% if c == 'vietnam' %}selected{% endif %}>{{ c | upper }}</option>
+                {% endfor %}
+                <option value="custom">-- Nhập từ khoá tự do (Custom) --</option>
+              </select>
+              <div class="helper-text">Các quốc gia có sẵn đã được nạp sẵn danh sách quận/huyện/sân bay.</div>
+            </div>
+
+            <div class="form-group">
+              <label for="langSelect">2. Ngôn ngữ tìm kiếm:</label>
+              <select id="langSelect" class="form-control">
+                <option value="vi" selected>Tiếng Việt (vi)</option>
+                <option value="en">Tiếng Anh (en)</option>
+                <option value="th">Tiếng Thái (th)</option>
+                <option value="zh">Tiếng Trung (zh)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="customKeywords">
+              3. Từ khoá tuỳ chọn bổ sung (Tuỳ chọn):
+            </label>
+            <textarea id="customKeywords" class="form-control" placeholder="Nhập mỗi từ khoá trên 1 dòng. Ví dụ:&#10;vé máy bay đà nẵng&#10;phòng vé máy bay quận 1&#10;travel agency in hanoi"></textarea>
+            <div class="helper-text">Nếu nhập danh sách này, hệ thống sẽ ưu tiên cào theo các từ khoá của bạn.</div>
+          </div>
+
+          <details class="advanced-box">
+            <summary>⚙️ Cấu hình nâng cao (Độ sâu, luồng cào, thị trường)</summary>
+            <div class="form-row" style="margin-top: 14px;">
+              <div class="form-group">
+                <label for="depthInput">Độ sâu cuộn trang (Depth):</label>
+                <select id="depthInput" class="form-control">
+                  <option value="2">2 (~1-3 phút, Test nhanh)</option>
+                  <option value="5" selected>5 (Tiêu chuẩn, ~10 phút)</option>
+                  <option value="10">10 (Quét sâu toàn diện, ~25 phút)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="concurrencyInput">Số luồng song song (Concurrency):</label>
+                <select id="concurrencyInput" class="form-control">
+                  <option value="2">2 luồng (Máy yếu / Tiết kiệm RAM)</option>
+                  <option value="4" selected>4 luồng (Khuyên dùng)</option>
+                  <option value="6">6 luồng (Máy mạnh)</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="maxSitesInput">Giới hạn website thẩm định:</label>
+                <select id="maxSitesInput" class="form-control">
+                  <option value="0" selected>0 (Thẩm định toàn bộ)</option>
+                  <option value="5">5 website đầu tiên (Test nhanh)</option>
+                  <option value="15">15 website đầu tiên</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="marketType">Chuẩn phân Tier:</label>
+                <select id="marketType" class="form-control">
+                  <option value="auto" selected>Tự động theo quốc gia</option>
+                  <option value="consolidator">Consolidator (Chỉ cần có bán vé)</option>
+                  <option value="ota_first">OTA-First (Bắt buộc có Online Search)</option>
+                </select>
+              </div>
+            </div>
+          </details>
+
+          <button type="submit" class="btn btn-primary" id="submitBtn" style="width: 100%; padding: 16px;">
+            <span>🚀</span> BẮT ĐẦU QUÉT LEADS VÀ THẨM ĐỊNH
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- TAB 2: TIẾN ĐỘ ĐANG CHẠY -->
+    <div id="tab-jobs" class="tab-pane">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span>⚡</span> Trạng Thái Tiến Trình Cào & Thẩm Định
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="fetchJobs()">
+            <span>🔄</span> Làm mới
+          </button>
+        </div>
+
+        <div id="jobsListContainer">
+          <div class="empty-state">
+            <div class="empty-state-icon">☕</div>
+            <p>Chưa có tác vụ nào đang chạy. Hãy chuyển sang Tab "Tìm kiếm mới" để bắt đầu!</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: FILE EXCEL KẾT QUẢ -->
+    <div id="tab-files" class="tab-pane">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span>📁</span> Danh Sách Báo Cáo Excel Kết Quả (Output)
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="fetchFiles()">
+            <span>🔄</span> Làm mới danh sách
+          </button>
+        </div>
+
+        <div class="table-container">
+          <table id="filesTable">
+            <thead>
+              <tr>
+                <th>Tên File Báo Cáo</th>
+                <th>Thời Gian Tạo</th>
+                <th>Dung Lượng</th>
+                <th style="text-align: right;">Thao Tác</th>
+              </tr>
+            </thead>
+            <tbody id="filesTableBody">
+              <!-- Render by JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script>
+    // Tab switching
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+
+      const targetPane = document.getElementById(tabId);
+      if (targetPane) targetPane.classList.add('active');
+
+      const btnMap = {
+        'tab-search': 0,
+        'tab-jobs': 1,
+        'tab-files': 2
+      };
+      const btns = document.querySelectorAll('.tab-btn');
+      if (btns[btnMap[tabId]]) btns[btnMap[tabId]].classList.add('active');
+
+      if (tabId === 'tab-files') fetchFiles();
+      if (tabId === 'tab-jobs') fetchJobs();
+    }
+
+    function onCountryChange() {
+      const select = document.getElementById('countrySelect');
+      const langSelect = document.getElementById('langSelect');
+      const val = select.value;
+      if (val === 'vietnam') langSelect.value = 'vi';
+      else if (val === 'thailand') langSelect.value = 'th';
+      else if (val === 'hongkong') langSelect.value = 'zh';
+      else langSelect.value = 'en';
+    }
+
+    function showToast(msg, type = 'info') {
+      const c = document.getElementById('toastContainer');
+      const t = document.createElement('div');
+      t.className = 'toast';
+      t.innerHTML = `<span>${type === 'success' ? '✅' : (type === 'error' ? '❌' : 'ℹ️')}</span> <span>${msg}</span>`;
+      c.appendChild(t);
+      setTimeout(() => {
+        t.style.opacity = '0';
+        setTimeout(() => t.remove(), 300);
+      }, 4000);
+    }
+
+    // Submit Search Form
+    async function submitSearch(e) {
+      e.preventDefault();
+      const country = document.getElementById('countrySelect').value;
+      const custom_keywords = document.getElementById('customKeywords').value;
+      const lang = document.getElementById('langSelect').value;
+      const depth = parseInt(document.getElementById('depthInput').value);
+      const concurrency = parseInt(document.getElementById('concurrencyInput').value);
+      const max_sites = parseInt(document.getElementById('maxSitesInput').value);
+      const market_type = document.getElementById('marketType').value;
+
+      const payload = {
+        country,
+        custom_keywords,
+        lang,
+        depth,
+        concurrency,
+        max_sites,
+        market_type
+      };
+
+      try {
+        const btn = document.getElementById('submitBtn');
+        btn.disabled = true;
+        btn.innerHTML = `<span>⏳</span> Đang khởi tạo...`;
+
+        const res = await fetch('/api/jobs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+        showToast('Đã bắt đầu chiến dịch tìm kiếm!', 'success');
+        switchTab('tab-jobs');
+        startPolling();
+      } catch (err) {
+        showToast('Lỗi gửi yêu cầu: ' + err.message, 'error');
+      } finally {
+        const btn = document.getElementById('submitBtn');
+        btn.disabled = false;
+        btn.innerHTML = `<span>🚀</span> BẮT ĐẦU QUÉT LEADS VÀ THẨM ĐỊNH`;
+      }
+    }
+
+    // Fetch and render jobs
+    async function fetchJobs() {
+      try {
+        const res = await fetch('/api/jobs');
+        const data = await res.json();
+        const jobs = data.jobs || [];
+
+        let runningCount = 0;
+        jobs.forEach(j => { if (j.status === 'running' || j.status === 'pending') runningCount++; });
+        document.getElementById('activeJobsBadge').innerText = runningCount;
+
+        const container = document.getElementById('jobsListContainer');
+        if (jobs.length === 0) {
+          container.innerHTML = `
+            <div class="empty-state">
+              <div class="empty-state-icon">☕</div>
+              <p>Chưa có tác vụ nào. Hãy tạo một lượt tìm kiếm mới!</p>
+            </div>
+          `;
+          return;
+        }
+
+        container.innerHTML = jobs.map(j => renderJobCard(j)).join('');
+      } catch (err) {
+        console.error('Fetch jobs error:', err);
+      }
+    }
+
+    function renderJobCard(job) {
+      const isRunning = job.status === 'running';
+      const isCompleted = job.status === 'completed';
+      const isFailed = job.status === 'failed';
+      const percent = job.percent || 0;
+      const stage = job.stage || 0;
+
+      const steps = [
+        "1. Sinh Query",
+        "2. Cào GMaps",
+        "3. Lọc Heuristic",
+        "4. Thẩm định Web",
+        "5. Xuất Excel"
+      ];
+
+      const stepsHtml = steps.map((s, idx) => {
+        const stepNum = idx + 1;
+        let cls = "";
+        if (stepNum < stage || isCompleted) cls = "done";
+        else if (stepNum === stage && isRunning) cls = "current";
+        return `<div class="step-node ${cls}">${s}</div>`;
+      }).join('');
+
+      let downloadBtn = "";
+      if (isCompleted && job.result && job.result.excel_filename) {
+        downloadBtn = `
+          <a href="/api/files/${job.result.excel_filename}/download" class="btn btn-primary btn-sm">
+            <span>📥</span> Tải File Excel (${job.result.qualified_count} Leads)
+          </a>
+        `;
+      }
+
+      const logsText = (job.logs || []).slice(-8).join('\n');
+
+      return `
+        <div class="job-card">
+          <div class="job-card-header">
+            <div>
+              <strong style="font-size: 15px; color: #fff;">🌍 ${job.country.toUpperCase()}</strong>
+              <span style="font-size: 12px; color: var(--text-dim); margin-left: 8px;">Tạo lúc: ${job.created_at}</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              ${downloadBtn}
+              <span class="job-tag tag-${job.status}">${job.status.toUpperCase()}</span>
+            </div>
+          </div>
+
+          <div class="steps-row">${stepsHtml}</div>
+
+          <div class="progress-track">
+            <div class="progress-fill" style="width: ${percent}%;"></div>
+          </div>
+
+          <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--text-sub);">
+            <span>${job.message || 'Đang xử lý...'}</span>
+            <strong>${percent}%</strong>
+          </div>
+
+          ${logsText ? `<div class="log-box">${logsText}</div>` : ''}
+        </div>
+      `;
+    }
+
+    // Fetch and render files
+    async function fetchFiles() {
+      try {
+        const res = await fetch('/api/files');
+        const data = await res.json();
+        const files = data.files || [];
+
+        document.getElementById('filesBadge').innerText = files.length;
+        const tbody = document.getElementById('filesTableBody');
+
+        if (files.length === 0) {
+          tbody.innerHTML = `
+            <tr>
+              <td colspan="4">
+                <div class="empty-state">
+                  <div class="empty-state-icon">📄</div>
+                  <p>Chưa có file Excel nào được tạo trong thư mục output.</p>
+                </div>
+              </td>
+            </tr>
+          `;
+          return;
+        }
+
+        tbody.innerHTML = files.map(f => `
+          <tr>
+            <td>
+              <div class="file-name">
+                <span class="file-icon">📊</span>
+                <span>${f.filename}</span>
+              </div>
+            </td>
+            <td style="color: var(--text-sub); font-size: 12px;">${f.modified_at}</td>
+            <td style="color: var(--text-sub); font-size: 12px;">${f.size_human}</td>
+            <td style="text-align: right;">
+              <a href="${f.download_url}" class="btn btn-primary btn-sm" style="margin-right: 8px;">
+                <span>📥</span> Tải về
+              </a>
+              <button class="btn btn-danger btn-sm" onclick="deleteFile('${f.filename}')">
+                <span>🗑️</span>
+              </button>
+            </td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        console.error('Fetch files error:', err);
+      }
+    }
+
+    async function deleteFile(filename) {
+      if (!confirm(`Bạn có chắc chắn muốn xoá file "${filename}"?`)) return;
+      try {
+        const res = await fetch(`/api/files/${filename}`, { method: 'DELETE' });
+        if (res.ok) {
+          showToast(`Đã xoá file ${filename}`, 'success');
+          fetchFiles();
+        } else {
+          showToast('Xoá file thất bại!', 'error');
+        }
+      } catch (err) {
+        showToast('Lỗi: ' + err.message, 'error');
+      }
+    }
+
+    // Auto-polling for jobs
+    let pollingTimer = null;
+    function startPolling() {
+      if (pollingTimer) clearInterval(pollingTimer);
+      pollingTimer = setInterval(async () => {
+        await fetchJobs();
+        const activeTab = document.querySelector('.tab-pane.active').id;
+        if (activeTab === 'tab-files') await fetchFiles();
+      }, 3000);
+    }
+
+    // Init
+    window.onload = () => {
+      fetchJobs();
+      fetchFiles();
+      startPolling();
+    };
+  </script>
+</body>
+</html>
