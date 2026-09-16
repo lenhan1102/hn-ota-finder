@@ -68,12 +68,16 @@ def run_job_task(job_id: str, payload: dict):
     job["started_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     def on_progress(stage: int, stage_name: str, percent: int, message: str):
+        if job.get("cancelled"):
+            raise Exception("Tiến trình đã bị huỷ bởi người dùng.")
+
         t_str = time.strftime("%H:%M:%S")
-        job["stage"] = stage
-        job["stage_name"] = stage_name
-        job["percent"] = percent
-        job["message"] = message
-        job["logs"].append(f"[{t_str}] {message}")
+        if stage != -1:  # -1 is used for internal cancellation checks without updating UI
+            job["stage"] = stage
+            job["stage_name"] = stage_name
+            job["percent"] = percent
+            job["message"] = message
+            job["logs"].append(f"[{t_str}] {message}")
 
     keywords_list = []
     if payload.get("custom_keywords"):
@@ -149,9 +153,9 @@ async def create_job(req: JobCreateRequest, bg_tasks: BackgroundTasks):
         "headless": headless_val,
         "status": "pending",
         "stage": 0,
-        "stage_name": "Khoi tao",
+        "stage_name": "Khởi tạo",
         "percent": 0,
-        "message": "Da dua vao hang doi xu ly...",
+        "message": "Đã đưa vào hàng đợi xử lý...",
         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "started_at": None,
         "finished_at": None,
@@ -159,13 +163,29 @@ async def create_job(req: JobCreateRequest, bg_tasks: BackgroundTasks):
         "result": None,
         "leads_data": None,
         "intermediate": None,
-        "logs": [f"[{t_now}] Da tao yeu cau tim kiem cho {req.country}"],
+        "logs": [f"[{t_now}] Đã tạo yêu cầu tìm kiếm cho quốc gia {req.country}"],
     }
     JOBS[job_id] = job_data
     payload_data = req.model_dump()
     payload_data["headless"] = headless_val
     bg_tasks.add_task(run_job_task, job_id, payload_data)
     return {"job_id": job_id, "status": "pending"}
+
+
+@app.post("/api/jobs/{job_id}/cancel")
+async def cancel_job(job_id: str):
+    job = JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job không tồn tại")
+    
+    if job["status"] in ["completed", "failed", "cancelled"]:
+        return {"status": "error", "message": "Job đã kết thúc, không thể huỷ"}
+    
+    job["cancelled"] = True
+    job["status"] = "cancelled"
+    job["message"] = "Đang huỷ tiến trình..."
+    job["logs"].append(f"[{time.strftime('%H:%M:%S')}] Người dùng yêu cầu huỷ tiến trình.")
+    return {"status": "success", "message": "Đã gửi yêu cầu huỷ"}
 
 
 @app.get("/api/jobs")
@@ -341,6 +361,20 @@ async def get_job_debug_files(job_id: str):
             "download_url": f"/api/jobs/{job_id}/debug/download/step3_candidates.json"
         })
 
+    # Bước 3b: excluded
+    excluded = inter.get("excluded") or []
+    excl_count = inter.get("excluded_count", len(excluded))
+    if excluded or excl_count > 0:
+        step_files.append({
+            "step": 3,
+            "step_name": "Lọc Heuristic — Danh sách bị loại (In-Memory)",
+            "filename": "step3_excluded.json",
+            "type": "json",
+            "rows": excl_count,
+            "size_human": format_bytes(len(json.dumps(excluded))),
+            "download_url": f"/api/jobs/{job_id}/debug/download/step3_excluded.json"
+        })
+
     # Bước 4: verdicts
     verdicts = inter.get("verdicts") or []
     if verdicts:
@@ -384,6 +418,67 @@ async def get_job_debug_files(job_id: str):
     return {"files": step_files, "work_dir": "In-Memory (RAM Object - Không lưu file rác)"}
 
 
+@app.get("/api/jobs/{job_id}/steps")
+async def get_job_steps_data(job_id: str):
+    """Trả về dữ liệu có cấu trúc chi tiết của cả 5 bước để Web UI hiển thị theo từng Tab."""
+    job = JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job không tồn tại")
+
+    inter = job.get("intermediate") or (job.get("result") or {}).get("intermediate") or {}
+    leads = job.get("leads_data") or (job.get("result") or {}).get("leads_data") or {}
+
+    queries = inter.get("queries") or []
+    raw_count = inter.get("raw_count", 0)
+    candidates = inter.get("candidates") or []
+    excluded = inter.get("excluded") or []
+    verdicts = inter.get("verdicts") or []
+    reverify = inter.get("reverify") or []
+    qual = leads.get("qualified_leads") or []
+    drop = leads.get("dropped_leads") or []
+    summary = leads.get("summary") or {
+        "qualified_count": len(qual),
+        "dropped_count": len(drop),
+        "total_leads": len(qual) + len(drop),
+    }
+
+    return {
+        "job_id": job_id,
+        "country": job.get("country", ""),
+        "status": job.get("status", ""),
+        "percent": job.get("percent", 0),
+        "stage": job.get("stage", 0),
+        "stage_name": job.get("stage_name", ""),
+        "step1": {
+            "queries": queries,
+            "count": len(queries),
+        },
+        "step2": {
+            "raw_count": raw_count,
+            "concurrency": job.get("concurrency", 1),
+            "depth": job.get("depth", 5),
+            "lang": job.get("lang", "vi"),
+        },
+        "step3": {
+            "candidates": candidates,
+            "candidates_count": inter.get("candidates_count", len(candidates)),
+            "excluded": excluded,
+            "excluded_count": inter.get("excluded_count", len(excluded)),
+        },
+        "step4": {
+            "verdicts": verdicts,
+            "verdicts_count": len(verdicts),
+            "reverify": reverify,
+            "reverify_count": len(reverify),
+        },
+        "step5": {
+            "qualified_leads": qual,
+            "dropped_leads": drop,
+            "summary": summary,
+        }
+    }
+
+
 @app.get("/api/jobs/{job_id}/debug/view/{filename}")
 async def view_debug_file(job_id: str, filename: str):
     """Trả về nội dung intermediate trực tiếp từ RAM dưới dạng JSON để hiển thị modal."""
@@ -406,6 +501,10 @@ async def view_debug_file(job_id: str, filename: str):
     elif filename == "step3_candidates.json":
         cand = inter.get("candidates") or []
         return JSONResponse({"type": "json", "data": cand, "filename": filename})
+
+    elif filename == "step3_excluded.json":
+        excl = inter.get("excluded") or []
+        return JSONResponse({"type": "json", "data": excl, "filename": filename})
 
     elif filename == "step4_verdicts.json":
         verdicts = inter.get("verdicts") or []
@@ -444,6 +543,11 @@ async def download_debug_file(job_id: str, filename: str):
     elif filename == "step3_candidates.json":
         cand = inter.get("candidates") or []
         buf = io.BytesIO(json.dumps(cand, ensure_ascii=False, indent=2).encode("utf-8"))
+        return StreamingResponse(buf, media_type="application/json", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+    elif filename == "step3_excluded.json":
+        excl = inter.get("excluded") or []
+        buf = io.BytesIO(json.dumps(excl, ensure_ascii=False, indent=2).encode("utf-8"))
         return StreamingResponse(buf, media_type="application/json", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
     elif filename == "step4_verdicts.json":

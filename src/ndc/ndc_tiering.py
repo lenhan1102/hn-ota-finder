@@ -84,33 +84,32 @@ COLS = ["domain", "real", "ota", "airline", "flightticketing", "onlinesearch",
 # ============================================================================
 def classify(r):
     if r.domain in PEERS:
-        return "DROP", "Peer B2B/wholesaler/travel-tech (khong phai dai ly cuoi)"
+        return "DROP", "Đối tác B2B / Wholesaler / Travel-tech (không phải đại lý bán vé lẻ cho khách)"
     if r.airline:
-        return "DROP", "Chinh hang bay (nguon NDC, khong phai khach)"
+        return "DROP", "Chính hãng hàng không (nguồn cung NDC, không phải đại lý khách hàng)"
     if not r.real:
-        return "DROP", "Khong phai site cong ty that / khong truy cap duoc"
+        return "DROP", "Không phải website công ty thực tế / không thể truy cập"
     if not r.ota:
-        return "DROP", "Khong phai dai ly du lich/OTA"
+        return "DROP", "Không phải đại lý du lịch / OTA"
     if r.puretour or not r.flightticketing:
-        return "DROP", "Khong ban ve may bay (tour thuan / phi hang khong)"
+        return "DROP", "Không bán vé máy bay (tour thuần túy / phi hàng không)"
     if getattr(r, "dead", False):
-        return "DROP", "Domain khong con phan giai — site da chet (kiem tra bang trinh duyet that)"
+        return "DROP", "Tên miền không còn phân giải DNS — website đã chết"
     if REQUIRE_ONLINE_SEARCH and not r.onlinesearch:
-        return "DROP", "Khong co online flight search (dat cho thu cong/lien he)"
+        return "DROP", "Không có công cụ tìm kiếm vé trực tuyến (đặt chỗ thủ công / liên hệ)"
 
-    # --- Da qualify: co ban ve may bay ---
+    # --- Đã qualify: có bán vé máy bay ---
     if not getattr(r, "reach", True):
-        return "Tier 3", ("Ban ve may bay nhung site khong vao duoc ke ca bang trinh duyet that "
-                          "(chan bot/chan vung hoac down) — kiem tra tay")
+        return "Tier 3", ("Bán vé máy bay nhưng website không vào được kể cả bằng trình duyệt thực (chặn bot/vùng hoặc down) — cần kiểm tra tay")
     if r.onlinesearch and r.iata:
-        return "Tier 1", "Online flight search + IATA hien thi (da kiem chung tren site that)"
+        return "Tier 1", "Tìm kiếm vé trực tuyến + Có chứng nhận IATA hiển thị"
     if r.onlinesearch:
-        return "Tier 2", "Online flight search (da kiem chung tren site that)"
+        return "Tier 2", "Tìm kiếm vé trực tuyến (đã kiểm chứng trên website thực tế)"
     if r.iata:
-        return "Tier 2", "Dai ly ve IATA-accredited (da kiem chung tren site that)"
+        return "Tier 2", "Đại lý vé máy bay IATA-accredited (đã kiểm chứng trên website thực tế)"
     if r.conf < 0.5:
-        return "Tier 3", "Ban ve may bay — do tin cay thap, can xac minh"
-    return "Tier 3", "Consolidator ve may bay (site song; offline / khong hien thi IATA) — NDC prospect"
+        return "Tier 3", "Bán vé máy bay — độ tin cậy thấp, cần xác minh thủ công"
+    return "Tier 3", "Consolidator vé máy bay (website hoạt động; offline / không hiển thị IATA) — Tiềm năng NDC"
 
 
 # ============================================================================
@@ -185,7 +184,11 @@ def apply_reverify(vdf, reverify_input):
         return pd.Series({"reach": reach, "dead": dead, "iata": iata,
                           "onlinesearch": osrch, "workurl": workurl, "https_ok": https_ok})
 
-    vdf[["reach", "dead", "iata", "onlinesearch", "workurl", "https_ok"]] = vdf.apply(one, axis=1)
+    if vdf.empty:
+        for c in ["reach", "dead", "iata", "onlinesearch", "workurl", "https_ok"]:
+            vdf[c] = None
+    else:
+        vdf[["reach", "dead", "iata", "onlinesearch", "workurl", "https_ok"]] = vdf.apply(one, axis=1)
     return vdf
 
 
@@ -303,14 +306,18 @@ def run_tiering(verdicts_data, country, output_json=None, output_xlsx=None, reve
     REQUIRE_ONLINE_SEARCH = require_online_search
 
     vdf = load_verdicts(verdicts_data)
-    print(f"Xu ly {len(vdf)} verdict cho quoc gia {country}...")
+    print(f"Đang xử lý {len(vdf)} kết quả thẩm định cho quốc gia {country}...")
     if EXCLUDE_BIG:
         before = len(vdf)
         vdf = vdf[~vdf.domain.isin(EXCLUDE_BIG)].copy()
-        print(f"  loai {before - len(vdf)} mega-OTA")
+        print(f"  Đã loại {before - len(vdf)} mega-OTA")
 
     vdf = apply_reverify(vdf, reverify_data)
-    vdf[["tier", "reason"]] = vdf.apply(lambda r: pd.Series(classify(r)), axis=1)
+    if vdf.empty:
+        vdf["tier"] = []
+        vdf["reason"] = []
+    else:
+        vdf[["tier", "reason"]] = vdf.apply(lambda r: pd.Series(classify(r)), axis=1)
 
     out = join_contacts(vdf, contacts_data)
     out["name"] = out.apply(
@@ -331,6 +338,17 @@ def run_tiering(verdicts_data, country, output_json=None, output_xlsx=None, reve
     qual = out[out.tier != "DROP"][qcols]
     drop = out[out.tier == "DROP"][dcols]
 
+    print(f"\n--- [KẾT QUẢ PHÂN TIER & LỌC LEADS CHI TIẾT] ---")
+    for _, row in out.iterrows():
+        tier_val = row.get("tier", "")
+        name_val = str(row.get("name", ""))[:32]
+        dom_val = row.get("domain", "")
+        reason_val = row.get("reason", "")
+        if tier_val == "DROP":
+            print(f"       [-] BỊ LOẠI [Phân Tier - DROP]: {name_val:<32} | Domain: {dom_val} | Lý do: {reason_val}")
+        else:
+            print(f"       [+] ĐẠT CHUẨN [{tier_val}]: {name_val:<32} | Domain: {dom_val} | Lý do: {reason_val}")
+
     from datetime import datetime
     leads_data = {
         "country": country,
@@ -349,14 +367,14 @@ def run_tiering(verdicts_data, country, output_json=None, output_xlsx=None, reve
         p_json.parent.mkdir(parents=True, exist_ok=True)
         with open(p_json, "w", encoding="utf-8") as f:
             json.dump(leads_data, f, ensure_ascii=False, indent=2)
-        print(f"Da luu ket qua JSON tai {output_json}")
+        print(f"Đã lưu kết quả JSON tại {output_json}")
 
     if output_xlsx:
         wb = build_leads_workbook(qual, drop)
         wb.save(output_xlsx)
-        print(f"Da luu Excel tai {output_xlsx}")
+        print(f"Đã lưu file Excel tại {output_xlsx}")
 
-    print(f"\n{country}: QUALIFIED={len(qual)}  DROPPED={len(drop)}  | {out.tier.value_counts().to_dict()}")
+    print(f"\n{country.upper()}: ĐẠT CHUẨN (QUALIFIED)={len(qual)}  BỊ LOẠI (DROPPED)={len(drop)}  | {out.tier.value_counts().to_dict()}")
     return qual, drop, leads_data
 
 def main():
@@ -380,7 +398,11 @@ def main():
         print(f"  loai {before - len(vdf)} mega-OTA")
 
     vdf = apply_reverify(vdf, args.reverify)
-    vdf[["tier", "reason"]] = vdf.apply(lambda r: pd.Series(classify(r)), axis=1)
+    if vdf.empty:
+        vdf["tier"] = []
+        vdf["reason"] = []
+    else:
+        vdf[["tier", "reason"]] = vdf.apply(lambda r: pd.Series(classify(r)), axis=1)
 
     out = join_contacts(vdf, args.contacts)
     out["name"] = out.apply(

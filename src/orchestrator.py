@@ -74,9 +74,9 @@ def execute_pipeline(
     excel_virtual_name = f"{task_name}_ndc_leads_{timestamp_str}.xlsx"
 
     # -------------------------------------------------------------------------
-    # BƯỚC 1: SINH DANH SÁCH QUERIES
+    # BƯỚC 1: SINH DANH SÁCH TỪ KHOÁ (QUERIES)
     # -------------------------------------------------------------------------
-    update_progress(1, "Sinh danh sach tu khoa", 10, "Dang tong hop tu khoa tim kiem...")
+    update_progress(1, "Sinh danh sách từ khoá", 10, "Đang tổng hợp từ khoá tìm kiếm...")
     queries = []
     if custom_keywords:
         country_cfg = COUNTRY_CONFIGS.get(country_key, None)
@@ -111,12 +111,12 @@ def execute_pipeline(
             if scoped_kw not in queries:
                 queries.append(scoped_kw)
 
-        print(f"    Su dung {len(queries)} tu khoa sau khi chuan hoa dia danh: {queries}")
+        print(f"    Sử dụng {len(queries)} từ khoá sau khi chuẩn hoá địa danh: {queries}")
 
     if not queries:
         if country_key in COUNTRY_CONFIGS:
             queries = build_queries(country_key)
-            print(f"    Load {len(queries)} tu khoa co san cho quoc gia: {country_key}.")
+            print(f"    Tải {len(queries)} từ khoá có sẵn cho quốc gia: {country_key}.")
         else:
             queries = [
                 f"travel agency in {country_key}",
@@ -126,14 +126,14 @@ def execute_pipeline(
                 f"tour operator in {country_key}",
                 f"flight booking in {country_key}",
             ]
-            print(f"    Chua co config cho {country_key}, su dung {len(queries)} tu khoa mac dinh.")
+            print(f"    Chưa có cấu hình sẵn cho {country_key}, sử dụng {len(queries)} từ khoá mặc định.")
 
-    update_progress(1, "Sinh danh sach tu khoa", 20, f"Da sinh xong {len(queries)} queries: {queries[:3]}")
+    update_progress(1, "Sinh danh sách từ khoá", 20, f"Đã sinh xong {len(queries)} từ khoá: {queries}")
 
     # -------------------------------------------------------------------------
     # BƯỚC 2: CÀO DỮ LIỆU GOOGLE MAPS (IN-MEMORY QUA TEMPFILE)
     # -------------------------------------------------------------------------
-    update_progress(2, "Cao du lieu Google Maps", 25, f"Dang khoi dong {concurrency} trinh duyet (Headless={headless})...")
+    update_progress(2, "Cào dữ liệu Google Maps", 25, f"Đang khởi động {concurrency} trình duyệt (Chạy ẩn={headless})...")
     candidates_bin = [
         scraper_bin,
         str(SRC_DIR.parent / "bin" / "google-maps-scraper"),
@@ -187,8 +187,31 @@ def execute_pipeline(
         user_home = os.path.expanduser("~")
         scraper_env["HOME"] = user_home
         scraper_env["PLAYWRIGHT_BROWSERS_PATH"] = os.path.join(user_home, ".cache", "ms-playwright")
-        scraper_res = subprocess.run(scraper_cmd, capture_output=True, text=True, env=scraper_env)
-        print(f"    Cao xong trong {int(time.time() - t0)} giay.")
+        
+        process = subprocess.Popen(scraper_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=scraper_env)
+        
+        while True:
+            if progress_callback:
+                try:
+                    progress_callback(-1, "check_cancel", 0, "")
+                except Exception as e:
+                    process.terminate()
+                    process.wait(timeout=5)
+                    raise
+            
+            if process.poll() is not None:
+                break
+            time.sleep(1)
+            
+        stdout, stderr = process.communicate()
+        class SubprocessResult:
+            def __init__(self, returncode, stdout, stderr):
+                self.returncode = returncode
+                self.stdout = stdout
+                self.stderr = stderr
+        scraper_res = SubprocessResult(process.returncode, stdout, stderr)
+        
+        print(f"    Cào dữ liệu hoàn tất trong {int(time.time() - t0)} giây.")
 
         if scraper_res.returncode != 0:
             err_msg = (scraper_res.stderr or scraper_res.stdout or "").strip()
@@ -215,7 +238,7 @@ def execute_pipeline(
                                     raw_places.append(json.loads(line_s))
                                 except Exception:
                                     pass
-            print(f"    Doc thanh cong {len(raw_places)} dia diem tu scraper vao RAM.")
+            print(f"    Đọc thành công {len(raw_places)} địa điểm từ Google Maps vào bộ nhớ (In-Memory).")
 
         if not raw_places and scraper_res.returncode != 0:
             raise RuntimeError(
@@ -236,14 +259,14 @@ def execute_pipeline(
     raw_count = len(raw_places) if isinstance(raw_places, list) else 0
     if raw_count == 0:
         msg = (
-            "Google Maps khong tra ve ket qua nao cho tu khoa nay. "
-            "Goi y: Dung tu khoa cu the hon, vi du: "
-            "'dai ly ve may bay Ha Noi', 'travel agency Hanoi', "
-            "'phong ve may bay quan 1', 'air ticket Ho Chi Minh'. "
-            "Tranh dung ten dia danh chung chung nhu 'Viet Nam' hoac 'Ha Noi'."
+            "Google Maps không trả về kết quả nào cho từ khoá này. "
+            "Gợi ý: Dùng từ khoá cụ thể hơn kèm địa danh, ví dụ: "
+            "'đại lý vé máy bay Hà Nội', 'travel agency Hanoi', "
+            "'phòng vé máy bay quận 1', 'air ticket Ho Chi Minh'. "
+            "Tránh dùng tên địa danh chung chung như 'Việt Nam' hoặc 'Hà Nội'."
         )
-        update_progress(2, "Cao du lieu Google Maps", 50, f"[WARN] {msg}")
-        update_progress(5, "Hoan tat", 100, f"Khong co ket qua. {msg}")
+        update_progress(2, "Cào dữ liệu Google Maps", 50, f"[CẢNH BÁO] {msg}")
+        update_progress(5, "Hoàn tất", 100, f"Không có kết quả. {msg}")
         return {
             "country": country_key,
             "task_name": task_name,
@@ -255,26 +278,32 @@ def execute_pipeline(
             "dropped_count": 0,
             "total_leads": 0,
             "leads_data": {},
-            "intermediate": {"queries": queries, "raw_count": 0, "candidates_count": 0},
+            "intermediate": {"queries": queries, "raw_count": 0, "candidates_count": 0, "excluded_count": 0, "candidates": [], "excluded": []},
             "warning": msg,
         }
 
     print(f"    [BƯỚC 2 KẾT QUẢ] Google Maps cào được {raw_count} doanh nghiệp thô (In-Memory).")
-    update_progress(2, "Cao du lieu Google Maps", 50, f"Cao thô hoan tat: {raw_count} doanh nghiep. Bat dau loc rac...")
+    update_progress(2, "Cào dữ liệu Google Maps", 50, f"Cào thô hoàn tất: {raw_count} doanh nghiệp. Bắt đầu lọc rác sơ bộ...")
 
     # -------------------------------------------------------------------------
     # BƯỚC 3: LỌC RÁC SƠ BỘ & CHẤM ĐIỂM HEURISTIC (THUẦN IN-MEMORY)
     # -------------------------------------------------------------------------
-    update_progress(3, "Loc rac so bo & Heuristic", 55, "Dang loai hang bay, tour thuan, SIM visa...")
-    candidates = run_pipeline(raw_places, country=country_key, output_dir=None)
+    update_progress(3, "Lọc rác sơ bộ & Heuristic", 55, "Đang loại bỏ hãng bay, tour thuần, SIM visa...")
+    pipeline_res = run_pipeline(raw_places, country=country_key, output_dir=None, return_excluded=True)
+    if isinstance(pipeline_res, tuple):
+        candidates, excluded_records = pipeline_res
+    else:
+        candidates, excluded_records = pipeline_res, []
+
     cand_count = len(candidates)
-    print(f"    [BƯỚC 3 KẾT QUẢ] Sau lọc Heuristic còn lại {cand_count} ứng viên đủ điều kiện thẩm định.")
+    excl_count = len(excluded_records)
+    print(f"    [BƯỚC 3 KẾT QUẢ] Sau lọc Heuristic còn lại {cand_count} ứng viên đủ điều kiện thẩm định (Đã lọc bỏ: {excl_count}).")
 
     if cand_count == 0:
-        msg = f"0/{raw_count} doanh nghiep vuot qua buoc loc Heuristic."
-        print(f"    [WARN] {msg}")
-        update_progress(3, "Loc rac so bo & Heuristic", 65, msg)
-        update_progress(5, "Hoan tat", 100, "Khong co ung vien nao vuot qua loc Heuristic.")
+        msg = f"0/{raw_count} doanh nghiệp vượt qua bước lọc Heuristic."
+        print(f"    [CẢNH BÁO] {msg}")
+        update_progress(3, "Lọc rác sơ bộ & Heuristic", 65, msg)
+        update_progress(5, "Hoàn tất", 100, "Không có ứng viên nào vượt qua bước lọc Heuristic.")
         return {
             "country": country_key,
             "task_name": task_name,
@@ -286,28 +315,36 @@ def execute_pipeline(
             "dropped_count": 0,
             "total_leads": 0,
             "leads_data": {},
-            "intermediate": {"queries": queries, "raw_count": raw_count, "candidates_count": 0},
+            "intermediate": {
+                "queries": queries,
+                "raw_count": raw_count,
+                "candidates_count": 0,
+                "excluded_count": excl_count,
+                "candidates": [],
+                "excluded": excluded_records[:200],
+            },
         }
 
-    update_progress(3, "Loc rac so bo & Heuristic", 65, f"Loc rac xong: giu lai {cand_count} ung vien sang buoc tham dinh web.")
+    update_progress(3, "Lọc rác sơ bộ & Heuristic", 65, f"Lọc rác xong: giữ lại {cand_count} ứng viên sang bước thẩm định website (Đã lọc bỏ {excl_count}).")
 
     # -------------------------------------------------------------------------
     # BƯỚC 4: THẨM ĐỊNH WEBSITE THỰC TẾ (THUẦN IN-MEMORY)
     # -------------------------------------------------------------------------
-    update_progress(4, "Tham dinh website", 70, f"Dang mo Chromium (Headless={headless}) kiem tra form ve va IATA cho {cand_count} web...")
+    update_progress(4, "Thẩm định website", 70, f"Đang mở Chromium (Chạy ẩn={headless}) kiểm tra form vé và IATA cho {cand_count} website...")
     verdicts, reverify_records = run_auto_verification(
         candidates_data=candidates,
         locale="vi-VN" if country_key == "vietnam" else "en-US",
         max_sites=max_sites,
         headless=headless,
+        progress_callback=progress_callback,
     )
     v_count = len(verdicts)
-    update_progress(4, "Tham dinh website", 85, f"Da tham dinh xong {v_count} websites ung vien.")
+    update_progress(4, "Thẩm định website", 85, f"Đã thẩm định xong {v_count} website ứng viên.")
 
     # -------------------------------------------------------------------------
     # BƯỚC 5: PHÂN TIER & XUẤT JSON KẾT QUẢ DUY NHẤT (KHÔNG TẠO EXCEL TĨNH)
     # -------------------------------------------------------------------------
-    update_progress(5, "Phan Tier & Xuat JSON", 90, "Dang tong hop phan Tier va tao JSON leads...")
+    update_progress(5, "Phân Tier & Xuất kết quả", 90, "Đang tổng hợp phân Tier và tạo danh sách leads...")
     if market_type == "ota_first" or (market_type == "auto" and country_key in ["indonesia", "philippines"]):
         req_online = True
     else:
@@ -323,11 +360,11 @@ def execute_pipeline(
         output_xlsx=None,  # Không lưu Excel tĩnh trên đĩa
     )
 
-    update_progress(5, "Hoan tat", 100, f"Hoan tat phan tier! Da tao JSON leads ({len(qual)} qualified, {len(drop)} dropped)")
+    update_progress(5, "Hoàn tất", 100, f"Hoàn tất phân Tier! Đã tạo danh sách ({len(qual)} đại lý đạt chuẩn, {len(drop)} đơn vị bị loại)")
     print("=" * 80)
-    print(f"JSON LEADS SAN SANG TAI: {final_json}")
-    print(f"   • Qualified: {len(qual)} dai ly")
-    print(f"   • Dropped:   {len(drop)} don vi")
+    print(f"DANH SÁCH LEADS ĐÃ SẴN SÀNG TẠI: {final_json}")
+    print(f"   • Đạt chuẩn (Qualified): {len(qual)} đại lý")
+    print(f"   • Bị loại (Dropped):     {len(drop)} đơn vị")
     print("=" * 80)
 
     return {
@@ -345,9 +382,11 @@ def execute_pipeline(
             "queries": queries,
             "raw_count": raw_count,
             "candidates_count": cand_count,
-            "candidates": candidates[:100],
-            "verdicts": verdicts[:100],
-            "reverify": reverify_records[:100],
+            "excluded_count": excl_count,
+            "candidates": candidates[:200],
+            "excluded": excluded_records[:200],
+            "verdicts": verdicts[:200],
+            "reverify": reverify_records[:200],
         },
         "status": "completed",
     }

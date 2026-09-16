@@ -121,6 +121,7 @@ def run_auto_verification(
     locale: str = "en-US",
     max_sites: int = 0,
     headless: bool = True,
+    progress_callback = None,
 ) -> tuple[list[dict], list[dict]]:
     if isinstance(candidates_data, pd.DataFrame):
         df = candidates_data.copy()
@@ -186,15 +187,15 @@ def run_auto_verification(
     api_key = openai_key or gemini_key
 
     if llm_provider:
-        print(f"    Da kich hoat tham dinh bang AI ({llm_provider.upper()})")
+        print(f"    Đã kích hoạt thẩm định bằng AI ({llm_provider.upper()})")
     else:
-        print("    Khong co AI API Key -> Dung thuat toan phan tich Playwright Offline")
+        print("    Không có AI API Key -> Sử dụng thuật toán phân tích Playwright Offline")
 
     reverify_records = []
     verdicts = []
 
     if sync_playwright is None:
-        raise RuntimeError("Playwright chua duoc cai dat.")
+        raise RuntimeError("Playwright chưa được cài đặt.")
 
     with sync_playwright() as p:
         browser = p.chromium.launch(
@@ -212,11 +213,12 @@ def run_auto_verification(
         for i, item in enumerate(unique_sites, 1):
             dom = item["domain"]
             url = item["url"]
-            print(f"  [{i}/{len(unique_sites)}] Dang kiem tra: {dom}...", end=" ", flush=True)
+            print(f"  [{i}/{len(unique_sites)}] Đang kiểm tra: {dom}...", end=" ", flush=True)
 
             # DNS Pre-check sieu nhanh (0.02s) de tranh ngam timeout vo tan tren site chet/NXDOMAIN
             if not check_domain_resolves(dom):
-                print(f"[LOAD_FAILED] (Domain chet / DNS NXDOMAIN - Bo qua ngay lap tuc)")
+                print(f"[TRUY_CẬP_THẤT_BẠI]")
+                print(f"       [-] Bị loại [Thẩm định]: {dom} | Lý do: Tên miền không tồn tại hoặc lỗi phân giải DNS (NXDOMAIN)")
                 probe_res = {
                     "loaded": False,
                     "error": "DNS_PROBE_FINISHED_NXDOMAIN (Tên miền không tồn tại hoặc chết DNS)",
@@ -236,7 +238,7 @@ def run_auto_verification(
                     "iata_ev": "not found",
                     "puretour": 0,
                     "conf": 0.0,
-                    "evidence": "Site chet (NXDOMAIN / DNS resolve failed)",
+                    "evidence": "Website đã chết (NXDOMAIN / Lỗi phân giải DNS)",
                     "reachable": 0,
                 })
                 continue
@@ -297,15 +299,26 @@ def run_auto_verification(
             verdict["reachable"] = 1 if probe_res.get("loaded") else 0
             verdicts.append(verdict)
 
-            status_str = "LOAD_OK" if probe_res.get("loaded") else "LOAD_FAILED"
-            flight_str = "CÓ BÁN VÉ (Qualified)" if verdict.get("flightticketing") else "KHÔNG BÁN VÉ"
-            ev_str = verdict.get("evidence", "")
             title_p = probe_res.get("title", "")[:40]
-            print(f"[{status_str}] | Title: '{title_p}' -> {flight_str}")
+            if not probe_res.get("loaded"):
+                print(f"[TRUY_CẬP_THẤT_BẠI] | Tiêu đề: '{title_p}'")
+                err_clean = probe_res.get("error", "Lỗi tải trang hoặc chặn bot")
+                print(f"       [-] Bị loại [Thẩm định]: {dom} | Lý do: Không thể truy cập website ({err_clean[:60]})")
+            else:
+                has_flight = bool(verdict.get("flightticketing"))
+                if has_flight:
+                    print(f"[TRUY_CẬP_THÀNH_CÔNG] | Tiêu đề: '{title_p}' -> CÓ BÁN VÉ MÁY BAY (Đủ điều kiện)")
+                    form_txt = "Có" if probe_res.get("flight_form") else "Không"
+                    iata_txt = probe_res.get("iata_number") or ("Có" if probe_res.get("iata_found") else "Không")
+                    print(f"       [+] Đạt chuẩn [Thẩm định]: {dom} | Lý do: Phát hiện nội dung bán vé máy bay (Form vé: {form_txt}, IATA: {iata_txt})")
+                else:
+                    print(f"[TRUY_CẬP_THÀNH_CÔNG] | Tiêu đề: '{title_p}' -> KHÔNG BÁN VÉ")
+                    print(f"       [-] Không đạt chuẩn [Thẩm định]: {dom} | Lý do: Website không có nội dung bán vé máy bay (Tour thuần hoặc ngành khác)")
+
             if probe_res.get("flight_form"):
-                print(f"      -> Phát hiện Form vé: {probe_res.get('flight_form_detail')}")
+                print(f"          -> Chi tiết Form vé: {probe_res.get('flight_form_detail')}")
             if probe_res.get("iata_found"):
-                print(f"      -> Phát hiện IATA: {probe_res.get('iata_number') or 'Có'}")
+                print(f"          -> Chi tiết IATA: {probe_res.get('iata_number') or 'Có'}")
 
         browser.close()
 
@@ -314,13 +327,13 @@ def run_auto_verification(
         output_reverify_json.parent.mkdir(parents=True, exist_ok=True)
         with open(output_reverify_json, "w", encoding="utf-8") as f:
             json.dump(reverify_records, f, ensure_ascii=False, indent=2)
-        print(f"Da luu reverify.json tai {output_reverify_json}")
+        print(f"Đã lưu reverify.json tại {output_reverify_json}")
 
     if output_verdicts_json:
         output_verdicts_json = Path(output_verdicts_json)
         output_verdicts_json.parent.mkdir(parents=True, exist_ok=True)
         with open(output_verdicts_json, "w", encoding="utf-8") as f:
             json.dump(verdicts, f, ensure_ascii=False, indent=2)
-        print(f"Da luu verdicts.json tai {output_verdicts_json}")
+        print(f"Đã lưu verdicts.json tại {output_verdicts_json}")
 
     return verdicts, reverify_records

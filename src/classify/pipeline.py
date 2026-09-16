@@ -52,7 +52,7 @@ def stage1_exclude(df: pd.DataFrame, country: str) -> tuple[pd.DataFrame, pd.Dat
         match = cat_lower == exc_cat
         new_matches = match & ~exclude_mask
         for idx in df[new_matches].index:
-            exclusion_reasons.append((idx, f"Excluded category: {exc_cat}"))
+            exclusion_reasons.append((idx, f"Danh mục bị loại trừ: {exc_cat}"))
         exclude_mask |= match
 
     # --- Rule 2: Airline offices (not third-party agencies) ---
@@ -61,7 +61,7 @@ def stage1_exclude(df: pd.DataFrame, country: str) -> tuple[pd.DataFrame, pd.Dat
         category = str(row.get('category', ''))
         if utils.is_airline_office(title, category):
             exclude_mask[idx] = True
-            exclusion_reasons.append((idx, f"Airline office: {title}"))
+            exclusion_reasons.append((idx, f"Văn phòng hãng hàng không (không phải đại lý cấp 2/3): {title}"))
 
     # --- Rule 3: Permanently/temporarily closed ---
     if 'status' in df.columns:
@@ -69,7 +69,7 @@ def stage1_exclude(df: pd.DataFrame, country: str) -> tuple[pd.DataFrame, pd.Dat
         closed = status_lower.str.contains('permanently closed|temporarily closed', na=False)
         new_closed = closed & ~exclude_mask
         for idx in df[new_closed].index:
-            exclusion_reasons.append((idx, "Business closed"))
+            exclusion_reasons.append((idx, "Doanh nghiệp đã đóng cửa (Permanently/Temporarily closed)"))
         exclude_mask |= closed
 
     # --- Rule 4: Zero-signal records ---
@@ -81,7 +81,7 @@ def stage1_exclude(df: pd.DataFrame, country: str) -> tuple[pd.DataFrame, pd.Dat
     zero_signal = no_website & no_email & low_reviews & no_phone
     new_zero = zero_signal & ~exclude_mask
     for idx in df[new_zero].index:
-        exclusion_reasons.append((idx, "Zero-signal: no website, no email, no phone, <2 reviews"))
+        exclusion_reasons.append((idx, "Thiếu thông tin liên hệ: Không có website, không email, không số điện thoại và dưới 2 đánh giá"))
     exclude_mask |= zero_signal
 
     # --- Rule 5: Deduplicate by CID (keep first occurrence) ---
@@ -89,7 +89,7 @@ def stage1_exclude(df: pd.DataFrame, country: str) -> tuple[pd.DataFrame, pd.Dat
         dup_mask = df.duplicated(subset='cid', keep='first') & df['cid'].notna()
         new_dups = dup_mask & ~exclude_mask
         for idx in df[new_dups].index:
-            exclusion_reasons.append((idx, "Duplicate CID"))
+            exclusion_reasons.append((idx, "Trùng lặp mã Google CID"))
         exclude_mask |= dup_mask
 
     # Build excluded dataframe with reasons
@@ -100,7 +100,7 @@ def stage1_exclude(df: pd.DataFrame, country: str) -> tuple[pd.DataFrame, pd.Dat
             reason_map[idx] += f"; {reason}"
         else:
             reason_map[idx] = reason
-    excluded_df['exclusion_reason'] = excluded_df.index.map(lambda x: reason_map.get(x, 'Unknown'))
+    excluded_df['exclusion_reason'] = excluded_df.index.map(lambda x: reason_map.get(x, 'Không rõ'))
 
     kept_df = df[~exclude_mask].copy()
 
@@ -497,16 +497,16 @@ def compute_score(feat: pd.Series) -> dict:
 # MAIN PIPELINE
 # ==============================================================================
 
-def run_pipeline(input_data, country: str, output_dir: str = None) -> list[dict]:
-    """Execute the full pipeline on in-memory data or file, returning candidates as list[dict]."""
+def run_pipeline(input_data, country: str, output_dir: str = None, return_excluded: bool = False):
+    """Thực thi toàn bộ quy trình lọc Heuristic và phân loại OTA/Air Ticketing."""
 
     print(f"\n{'='*70}")
-    print(f"  OTA & Air Ticketing Identification Pipeline (In-Memory)")
-    print(f"  Country: {country.upper()}")
+    print(f"  QUY TRÌNH NHẬN DIỆN OTA & ĐẠI LÝ VÉ MÁY BAY (IN-MEMORY)")
+    print(f"  Quốc gia: {country.upper()}")
     print(f"{'='*70}\n")
 
     # --- Load data ---
-    print("[1/5] Loading data...")
+    print("[1/5] Đang nạp dữ liệu vào bộ nhớ (In-Memory)...")
     if isinstance(input_data, pd.DataFrame):
         df = input_data.copy()
     elif isinstance(input_data, list):
@@ -520,14 +520,14 @@ def run_pipeline(input_data, country: str, output_dir: str = None) -> list[dict]
                     data = json.load(f)
                     df = pd.DataFrame(data)
             except Exception:
-                # Thu doc JSON lines
+                # Thử đọc JSON lines
                 with open(in_str, "r", encoding="utf-8") as f:
                     lines = [json.loads(l) for l in f if l.strip()]
                     df = pd.DataFrame(lines)
         else:
             df = pd.read_csv(in_str)
 
-    print(f"       Loaded {len(df)} records into memory.")
+    print(f"       Đã nạp {len(df)} địa điểm vào bộ nhớ.")
 
     # Normalize common column names from scraper
     col_map = {
@@ -547,23 +547,34 @@ def run_pipeline(input_data, country: str, output_dir: str = None) -> list[dict]
             df[req_col] = ''
 
     # --- Stage 1: Exclusion ---
-    print("[2/5] Stage 1: Applying exclusion filters...")
+    print("[2/5] Bước 1: Áp dụng bộ lọc loại trừ sơ bộ...")
     kept_df, excluded_df = stage1_exclude(df, country)
-    print(f"       Excluded: {len(excluded_df)} records")
-    print(f"       Remaining: {len(kept_df)} records")
+    print(f"       Đã loại trừ: {len(excluded_df)} địa điểm")
+    print(f"       Còn lại: {len(kept_df)} địa điểm")
+    
+    all_excluded_records = []
     if not excluded_df.empty:
-        print("       --- [DANH SÁCH RECORD BỊ LOẠI Ở STAGE 1] ---")
+        print("       --- [DANH SÁCH ĐỊA ĐIỂM BỊ LOẠI Ở BƯỚC 1 (LOẠI TRỪ SƠ BỘ)] ---")
         for e_idx, e_row in excluded_df.iterrows():
             e_title = str(e_row.get('title', ''))[:35]
             e_reason = str(e_row.get('exclusion_reason', ''))
-            print(f"       [-] Bị loại: {e_title:<35} | Lý do: {e_reason}")
+            print(f"       [-] Bị loại [Bước 1]: {e_title:<35} | Lý do: {e_reason}")
+            all_excluded_records.append({
+                'title': e_row.get('title', ''),
+                'category': e_row.get('category', ''),
+                'website': e_row.get('website', ''),
+                'phone': e_row.get('phone', ''),
+                'emails': e_row.get('emails', ''),
+                'address': e_row.get('address', ''),
+                'exclusion_reason': e_reason,
+            })
 
     # --- Stage 2: Feature extraction ---
-    print("[3/5] Stage 2: Extracting features...")
+    print("[3/5] Bước 2: Trích xuất đặc trưng phân loại...")
     features_df = extract_features(kept_df, country)
 
     # --- Stage 2: Classification ---
-    print(f"[4/5] Stage 2: Classifying {len(features_df)} candidates...")
+    print(f"[4/5] Bước 2: Chấm điểm và phân loại {len(features_df)} ứng viên tiềm năng...")
     ota_results = []
     air_results = []
 
@@ -587,9 +598,19 @@ def run_pipeline(input_data, country: str, output_dir: str = None) -> list[dict]
         is_kept = (ota_class != 'none') or (air_class != 'none')
         if is_kept:
             reasons_str = "; ".join(ota_reasons + air_reasons)
-            print(f"       [+] GIỮ LẠI: {title_str[:30]:<30} | OTA={ota_class}, Air={air_class} | Lý do: {reasons_str[:60]}")
+            print(f"       [+] GIỮ LẠI [Heuristic]: {title_str[:30]:<30} | Phân loại: OTA={ota_class}, Air={air_class} | Lý do: {reasons_str[:70]}")
         else:
-            print(f"       [-] LOẠI BỎ (HEURISTIC NONE): {title_str[:30]:<30} | Cat: {cat_str[:20]} | Web: {web_str[:25]} | Lý do: Không có tín hiệu vé máy bay/booking")
+            reason_drop = "Không có tín hiệu bán vé máy bay hoặc đặt vé trực tuyến"
+            print(f"       [-] LOẠI BỎ [Heuristic]: {title_str[:30]:<30} | Danh mục: {cat_str[:20]} | Website: {web_str[:25]} | Lý do: {reason_drop}")
+            all_excluded_records.append({
+                'title': orig_row.get('title', ''),
+                'category': orig_row.get('category', ''),
+                'website': orig_row.get('website', ''),
+                'phone': orig_row.get('phone', ''),
+                'emails': orig_row.get('emails', ''),
+                'address': orig_row.get('address', ''),
+                'exclusion_reason': f"Heuristic: {reason_drop}",
+            })
 
         base_info = {
             'title': orig_row.get('title', ''),
@@ -713,8 +734,10 @@ TOTAL UNIQUE CANDIDATES FOR PROBE: {len(combined_entries)}
             f.write(summary)
         print(summary)
     else:
-        print(f"[5/5] In-memory pipeline complete. Found {len(combined_entries)} unique candidates for probe.")
+        print(f"[5/5] Hoàn tất lọc Heuristic In-Memory. Tìm thấy {len(combined_entries)} ứng viên đủ điều kiện thẩm định.")
 
+    if return_excluded:
+        return combined_entries, all_excluded_records
     return combined_entries
 
 

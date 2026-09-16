@@ -89,6 +89,7 @@
       letter-spacing: -0.5px;
       background: linear-gradient(135deg, #fff 40%, #94a3b8);
       -webkit-background-clip: text;
+      background-clip: text;
       -webkit-text-fill-color: transparent;
     }
 
@@ -657,6 +658,131 @@
     .debug-step-name { font-weight: 600; font-size: 13px; flex: 1; }
     .debug-step-meta { font-size: 12px; color: var(--text-dim); }
     .debug-step-actions { display: flex; gap: 6px; }
+
+    /* KPI Grid & Cards */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+    .kpi-card {
+      background: rgba(10, 14, 26, 0.5);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      transition: all 0.2s ease;
+    }
+    .kpi-card:hover {
+      border-color: rgba(255, 255, 255, 0.15);
+      background: rgba(17, 24, 39, 0.6);
+    }
+    .kpi-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .kpi-value {
+      font-size: 22px;
+      font-weight: 800;
+      color: #fff;
+    }
+    .kpi-sub {
+      font-size: 11px;
+      color: var(--text-sub);
+    }
+
+    /* Sub-tabs pills */
+    .pill-group {
+      display: inline-flex;
+      gap: 6px;
+      background: rgba(10, 14, 26, 0.6);
+      padding: 4px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      margin-bottom: 16px;
+    }
+    .pill-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-sub);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 7px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .pill-btn:hover {
+      color: #fff;
+    }
+    .pill-btn.active {
+      background: var(--primary);
+      color: #fff;
+      box-shadow: 0 0 10px rgba(99, 102, 241, 0.4);
+    }
+
+    /* Step badges */
+    .badge-tier {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .badge-tier-1 {
+      background: rgba(245, 158, 11, 0.15);
+      border: 1px solid rgba(245, 158, 11, 0.4);
+      color: #fbbf24;
+    }
+    .badge-tier-2 {
+      background: rgba(56, 189, 248, 0.15);
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      color: #38bdf8;
+    }
+    .badge-tier-3 {
+      background: rgba(168, 85, 247, 0.15);
+      border: 1px solid rgba(168, 85, 247, 0.4);
+      color: #c084fc;
+    }
+    .badge-drop {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.35);
+      color: #f87171;
+    }
+    .badge-pass {
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      color: #34d399;
+    }
+
+    .reason-text {
+      color: #f87171;
+      font-size: 12px;
+      line-height: 1.4;
+      font-weight: 600;
+    }
+
+    .step-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 20px;
+      background: rgba(10, 14, 26, 0.5);
+      padding: 12px 16px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+    }
   </style>
 </head>
 <body>
@@ -684,10 +810,25 @@
         <span>🔍</span> Tìm kiếm mới
       </button>
       <button class="tab-btn" onclick="switchTab('tab-jobs')">
-        <span>⚡</span> Tiến độ đang chạy <span class="badge-count" id="activeJobsBadge">0</span>
+        <span>⚡</span> Tiến độ <span class="badge-count" id="activeJobsBadge">0</span>
+      </button>
+      <button class="tab-btn" onclick="switchTab('tab-step1')">
+        <span>📝</span> Bước 1: Từ khoá
+      </button>
+      <button class="tab-btn" onclick="switchTab('tab-step2')">
+        <span>📍</span> Bước 2: Cào GMaps
+      </button>
+      <button class="tab-btn" onclick="switchTab('tab-step3')">
+        <span>🔍</span> Bước 3: Lọc Heuristic
+      </button>
+      <button class="tab-btn" onclick="switchTab('tab-step4')">
+        <span>🌐</span> Bước 4: Thẩm định Web
+      </button>
+      <button class="tab-btn" onclick="switchTab('tab-step5')">
+        <span>📊</span> Bước 5: Phân Tier Leads
       </button>
       <button class="tab-btn" onclick="switchTab('tab-files')">
-        <span>📁</span> File kết quả Excel <span class="badge-count" id="filesBadge">0</span>
+        <span>📁</span> File Excel <span class="badge-count" id="filesBadge">0</span>
       </button>
       <button class="tab-btn" onclick="switchTab('tab-debug')" id="debugTabBtn">
         <span>🔬</span> Debug Files
@@ -731,8 +872,8 @@
             <label for="customKeywords">
               3. Từ khoá tuỳ chọn bổ sung (Tuỳ chọn):
             </label>
-            <textarea id="customKeywords" class="form-control" placeholder="Nhập mỗi từ khoá trên 1 dòng. Ví dụ:&#10;vé máy bay đà nẵng&#10;phòng vé máy bay quận 1&#10;travel agency in hanoi"></textarea>
-            <div class="helper-text">Nếu nhập danh sách này, hệ thống sẽ ưu tiên cào theo các từ khoá của bạn.</div>
+            <textarea id="customKeywords" class="form-control" placeholder="Để nhập nhiều queries, hãy xuống dòng (nhấn Enter) cho mỗi từ khoá.&#10;Ví dụ:&#10;vé máy bay đà nẵng&#10;phòng vé máy bay quận 1&#10;travel agency in hanoi"></textarea>
+            <div class="helper-text">Hệ thống tự động tách mỗi dòng thành 1 query riêng biệt.</div>
           </div>
 
           <div class="advanced-box">
@@ -820,7 +961,372 @@
       </div>
     </div>
 
-    <!-- TAB 3: FILE EXCEL KẾT QUẢ -->
+    <!-- TAB STEP 1: TỪ KHOÁ TÌM KIẾM -->
+    <div id="tab-step1" class="tab-pane">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span>📝</span> Bước 1: Danh Sách Từ Khoá Tìm Kiếm Đã Sinh
+          </div>
+        </div>
+
+        <div class="step-toolbar">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:13px;color:var(--text-sub);font-weight:600;">Chiến dịch đang xem:</span>
+            <select class="form-control stepJobSelect" style="min-width:260px;padding:6px 12px;font-size:13px;" onchange="onStepJobSelectChange(this.value)">
+              <option value="">-- Chọn chiến dịch để xem --</option>
+            </select>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="stepJobMetaBadge" style="font-size:12px;color:var(--text-dim);"></span>
+            <button class="btn btn-secondary btn-sm" onclick="reloadCurrentStepData()">🔄 Làm mới dữ liệu</button>
+          </div>
+        </div>
+
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-label">Tổng số từ khoá</div>
+            <div class="kpi-value" id="step1Count">–</div>
+            <div class="kpi-sub">Queries được sinh ra</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Thị trường / Quốc gia</div>
+            <div class="kpi-value" id="step1Country" style="font-size:18px;text-transform:uppercase;">–</div>
+            <div class="kpi-sub">Kèm chuẩn hoá địa danh</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Trạng thái bước</div>
+            <div class="kpi-value" id="step1Status" style="font-size:16px;color:var(--success);">–</div>
+            <div class="kpi-sub">Bước 1 / 5 Pipeline</div>
+          </div>
+        </div>
+
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:60px;">STT</th>
+                <th>Từ khoá tìm kiếm trên Google Maps</th>
+                <th style="width:140px;text-align:right;">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody id="step1TableBody">
+              <tr><td colspan="3"><div class="empty-state"><div class="empty-state-icon">📝</div><p>Chọn một chiến dịch ở trên để xem danh sách từ khoá.</p></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB STEP 2: CÀO GOOGLE MAPS -->
+    <div id="tab-step2" class="tab-pane">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span>📍</span> Bước 2: Kết Quả Cào Thô Google Maps
+          </div>
+        </div>
+
+        <div class="step-toolbar">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:13px;color:var(--text-sub);font-weight:600;">Chiến dịch đang xem:</span>
+            <select class="form-control stepJobSelect" style="min-width:260px;padding:6px 12px;font-size:13px;" onchange="onStepJobSelectChange(this.value)">
+              <option value="">-- Chọn chiến dịch để xem --</option>
+            </select>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="stepJobMetaBadge" style="font-size:12px;color:var(--text-dim);"></span>
+            <button class="btn btn-secondary btn-sm" onclick="reloadCurrentStepData()">🔄 Làm mới dữ liệu</button>
+          </div>
+        </div>
+
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-label">Doanh nghiệp cào được</div>
+            <div class="kpi-value" id="step2RawCount" style="color:#38bdf8;">–</div>
+            <div class="kpi-sub">Địa điểm thu thập từ GMaps Feed</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Trình duyệt Playwright</div>
+            <div class="kpi-value" id="step2Concurrency">–</div>
+            <div class="kpi-sub">Số luồng song song</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Độ sâu cuộn trang</div>
+            <div class="kpi-value" id="step2Depth">–</div>
+            <div class="kpi-sub">Mức độ cuộn danh sách</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Cơ chế lưu trữ</div>
+            <div class="kpi-value" style="font-size:16px;color:#10b981;">In-Memory (RAM)</div>
+            <div class="kpi-sub">Giải phóng tức thì, không rác ổ cứng</div>
+          </div>
+        </div>
+
+        <div class="advanced-box" style="margin-top:10px;">
+          <div class="advanced-box-title">ℹ️ Thông tin quy trình cào Google Maps</div>
+          <p style="font-size:13px;color:var(--text-sub);line-height:1.6;" id="step2Desc">
+            Dữ liệu cào từ Google Maps bao gồm tên, địa chỉ, website, số điện thoại, danh mục ngành nghề và lượt đánh giá. Toàn bộ được nạp trực tiếp vào bộ nhớ RAM và chuyển ngay sang Bước 3 (Lọc Heuristic) để lọc sạch các đơn vị không liên quan.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB STEP 3: LỌC HEURISTIC -->
+    <div id="tab-step3" class="tab-pane">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span>🔍</span> Bước 3: Lọc Rác Sơ Bộ & Chấm Điểm Heuristic
+          </div>
+        </div>
+
+        <div class="step-toolbar">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:13px;color:var(--text-sub);font-weight:600;">Chiến dịch đang xem:</span>
+            <select class="form-control stepJobSelect" style="min-width:260px;padding:6px 12px;font-size:13px;" onchange="onStepJobSelectChange(this.value)">
+              <option value="">-- Chọn chiến dịch để xem --</option>
+            </select>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="stepJobMetaBadge" style="font-size:12px;color:var(--text-dim);"></span>
+            <button class="btn btn-secondary btn-sm" onclick="reloadCurrentStepData()">🔄 Làm mới dữ liệu</button>
+          </div>
+        </div>
+
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-label">Ứng viên vượt qua lọc</div>
+            <div class="kpi-value" id="step3CandCount" style="color:var(--success);">–</div>
+            <div class="kpi-sub">Đủ điều kiện vào thẩm định Bước 4</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Địa điểm bị loại bỏ</div>
+            <div class="kpi-value" id="step3ExclCount" style="color:var(--danger);">–</div>
+            <div class="kpi-sub">Hãng bay, tour thuần, thiếu info...</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Tỷ lệ giữ lại</div>
+            <div class="kpi-value" id="step3Rate" style="font-size:20px;">–</div>
+            <div class="kpi-sub">Tỷ lệ ứng viên tiềm năng</div>
+          </div>
+        </div>
+
+        <div class="pill-group">
+          <button class="pill-btn active" id="step3BtnCand" onclick="switchStep3SubTab('candidates')">
+            🟢 Ứng viên đủ điều kiện (<span id="step3SubCandBadge">0</span>)
+          </button>
+          <button class="pill-btn" id="step3BtnExcl" onclick="switchStep3SubTab('excluded')">
+            🔴 Bị loại sơ bộ & Lý do (<span id="step3SubExclBadge">0</span>)
+          </button>
+        </div>
+
+        <!-- Sub-panel Candidates -->
+        <div id="step3PanelCand" class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:40px;">STT</th>
+                <th>Tên đại lý</th>
+                <th>Phân loại</th>
+                <th style="text-align:center;">Điểm</th>
+                <th>Tier ưu tiên</th>
+                <th>Website</th>
+                <th>Điện thoại</th>
+                <th>Thành phố</th>
+              </tr>
+            </thead>
+            <tbody id="step3CandTableBody">
+              <tr><td colspan="8"><div class="empty-state"><div class="empty-state-icon">🔍</div><p>Chọn một chiến dịch ở trên để xem ứng viên.</p></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Sub-panel Excluded -->
+        <div id="step3PanelExcl" class="table-container" style="display:none;">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:40px;">STT</th>
+                <th>Tên doanh nghiệp</th>
+                <th>Danh mục Google Maps</th>
+                <th>Website</th>
+                <th>LÝ DO BỊ LOẠI (EXCLUSION REASON)</th>
+              </tr>
+            </thead>
+            <tbody id="step3ExclTableBody">
+              <tr><td colspan="5"><div class="empty-state"><div class="empty-state-icon">🛑</div><p>Chọn một chiến dịch ở trên để xem danh sách bị loại.</p></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB STEP 4: THẨM ĐỊNH WEBSITE -->
+    <div id="tab-step4" class="tab-pane">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span>🌐</span> Bước 4: Thẩm Định Website Thực Tế Bằng Playwright Chromium & AI
+          </div>
+        </div>
+
+        <div class="step-toolbar">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:13px;color:var(--text-sub);font-weight:600;">Chiến dịch đang xem:</span>
+            <select class="form-control stepJobSelect" style="min-width:260px;padding:6px 12px;font-size:13px;" onchange="onStepJobSelectChange(this.value)">
+              <option value="">-- Chọn chiến dịch để xem --</option>
+            </select>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="stepJobMetaBadge" style="font-size:12px;color:var(--text-dim);"></span>
+            <button class="btn btn-secondary btn-sm" onclick="reloadCurrentStepData()">🔄 Làm mới dữ liệu</button>
+          </div>
+        </div>
+
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-label">Tổng website thẩm định</div>
+            <div class="kpi-value" id="step4Total">–</div>
+            <div class="kpi-sub">Kiểm tra qua Playwright</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Có bán vé máy bay</div>
+            <div class="kpi-value" id="step4FlightCount" style="color:var(--success);">–</div>
+            <div class="kpi-sub">Đủ điều kiện bán vé</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Có Form vé online</div>
+            <div class="kpi-value" id="step4FormCount" style="color:#38bdf8;">–</div>
+            <div class="kpi-sub">Đặt chỗ trực tuyến</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Có chứng nhận IATA</div>
+            <div class="kpi-value" id="step4IataCount" style="color:#fbbf24;">–</div>
+            <div class="kpi-sub">Đại lý IATA chuẩn</div>
+          </div>
+        </div>
+
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:40px;">STT</th>
+                <th>Tên miền (Domain)</th>
+                <th>Trạng thái truy cập</th>
+                <th>Bán vé máy bay</th>
+                <th>Form vé Online</th>
+                <th>Chứng nhận IATA</th>
+                <th>Bằng chứng & Ghi chú (Evidence)</th>
+              </tr>
+            </thead>
+            <tbody id="step4TableBody">
+              <tr><td colspan="7"><div class="empty-state"><div class="empty-state-icon">🌐</div><p>Chọn một chiến dịch ở trên để xem kết quả thẩm định website.</p></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB STEP 5: PHÂN TIER LEADS -->
+    <div id="tab-step5" class="tab-pane">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span>📊</span> Bước 5: Báo Cáo Phân Tier Leads & Danh Sách Bị Loại
+          </div>
+          <div id="step5DownloadExcelBtnContainer"></div>
+        </div>
+
+        <div class="step-toolbar">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:13px;color:var(--text-sub);font-weight:600;">Chiến dịch đang xem:</span>
+            <select class="form-control stepJobSelect" style="min-width:260px;padding:6px 12px;font-size:13px;" onchange="onStepJobSelectChange(this.value)">
+              <option value="">-- Chọn chiến dịch để xem --</option>
+            </select>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="stepJobMetaBadge" style="font-size:12px;color:var(--text-dim);"></span>
+            <button class="btn btn-secondary btn-sm" onclick="reloadCurrentStepData()">🔄 Làm mới dữ liệu</button>
+          </div>
+        </div>
+
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-label">🌟 Tier 1 (Online + IATA)</div>
+            <div class="kpi-value" id="step5T1Count" style="color:#fbbf24;">–</div>
+            <div class="kpi-sub">Tiềm năng hợp tác cao nhất</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">💎 Tier 2 (Online hoặc IATA)</div>
+            <div class="kpi-value" id="step5T2Count" style="color:#38bdf8;">–</div>
+            <div class="kpi-sub">Đại lý vé mạnh</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">📌 Tier 3 (Consolidator Offline)</div>
+            <div class="kpi-value" id="step5T3Count" style="color:#c084fc;">–</div>
+            <div class="kpi-sub">Phòng vé truyền thống</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">🛑 Bị loại (Dropped)</div>
+            <div class="kpi-value" id="step5DropCount" style="color:var(--danger);">–</div>
+            <div class="kpi-sub">Không đủ điều kiện NDC</div>
+          </div>
+        </div>
+
+        <div class="pill-group">
+          <button class="pill-btn active" id="step5BtnQual" onclick="switchStep5SubTab('qualified')">
+            🏆 Leads Đạt Chuẩn (<span id="step5SubQualBadge">0</span>)
+          </button>
+          <button class="pill-btn" id="step5BtnDrop" onclick="switchStep5SubTab('dropped')">
+            🛑 Danh Sách Bị Loại & Lý Do (<span id="step5SubDropBadge">0</span>)
+          </button>
+        </div>
+
+        <!-- Sub-panel Qualified -->
+        <div id="step5PanelQual" class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:85px;">Hạng</th>
+                <th>Tên đại lý</th>
+                <th>Website</th>
+                <th>Bán vé</th>
+                <th>Online Search</th>
+                <th>IATA</th>
+                <th>Thành phố</th>
+                <th>Điện thoại</th>
+                <th>Email</th>
+                <th>Lý do đạt chuẩn</th>
+              </tr>
+            </thead>
+            <tbody id="step5QualTableBody">
+              <tr><td colspan="10"><div class="empty-state"><div class="empty-state-icon">🏆</div><p>Chọn một chiến dịch ở trên để xem danh sách Leads đạt chuẩn.</p></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Sub-panel Dropped -->
+        <div id="step5PanelDrop" class="table-container" style="display:none;">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:40px;">STT</th>
+                <th>Tên đơn vị</th>
+                <th>Website</th>
+                <th>LÝ DO BỊ LOẠI (REASON)</th>
+                <th>Bằng chứng thực tế</th>
+              </tr>
+            </thead>
+            <tbody id="step5DropTableBody">
+              <tr><td colspan="5"><div class="empty-state"><div class="empty-state-icon">🛑</div><p>Chọn một chiến dịch ở trên để xem danh sách bị loại.</p></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB FILES: FILE EXCEL KẾT QUẢ -->
     <div id="tab-files" class="tab-pane">
       <div class="card">
         <div class="card-header">
@@ -906,8 +1412,13 @@
       const btnMap = {
         'tab-search': 0,
         'tab-jobs': 1,
-        'tab-files': 2,
-        'tab-debug': 3
+        'tab-step1': 2,
+        'tab-step2': 3,
+        'tab-step3': 4,
+        'tab-step4': 5,
+        'tab-step5': 6,
+        'tab-files': 7,
+        'tab-debug': 8
       };
       const btns = document.querySelectorAll('.tab-btn');
       if (btns[btnMap[tabId]] !== undefined) btns[btnMap[tabId]].classList.add('active');
@@ -915,6 +1426,9 @@
       if (tabId === 'tab-files') fetchFiles();
       if (tabId === 'tab-jobs') fetchJobs();
       if (tabId === 'tab-debug') { fetchJobs().then(() => populateDebugJobSelect()); }
+      if (tabId.startsWith('tab-step')) {
+        ensureStepDataLoaded();
+      }
     }
 
     function onCountryChange() {
@@ -1044,12 +1558,27 @@
         const leadCount = job.result.qualified_count != null ? job.result.qualified_count : 0;
         downloadBtn = `
           <a href="/api/jobs/${job.id}/excel" class="btn btn-primary btn-sm">
-            <span>📥</span> Tải File Excel (${leadCount} Leads)
+            <span>📥</span> Tải Excel (${leadCount} Leads)
           </a>
         `;
       }
 
+      let viewStepsBtn = `
+        <button class="btn btn-secondary btn-sm" onclick="viewJobSteps('${job.id}')" title="Xem kết quả chi tiết từng bước của chiến dịch này">
+          <span>📊</span> Xem các bước
+        </button>
+      `;
+
       const logsText = (job.logs || []).slice(-8).join('\n');
+
+      let cancelBtn = "";
+      if (isRunning || job.status === 'pending') {
+        cancelBtn = `
+          <button class="btn btn-danger btn-sm" onclick="cancelJob('${job.id}')" title="Huỷ tiến trình này">
+            <span>🛑</span> Huỷ
+          </button>
+        `;
+      }
 
       return `
         <div class="job-card">
@@ -1058,7 +1587,9 @@
               <strong style="font-size: 15px; color: #fff;">🌍 ${job.country.toUpperCase()}</strong>
               <span style="font-size: 12px; color: var(--text-dim); margin-left: 8px;">Tạo lúc: ${job.created_at}</span>
             </div>
-            <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+              ${viewStepsBtn}
+              ${cancelBtn}
               ${downloadBtn}
               <span class="job-tag tag-${job.status}">${job.status.toUpperCase()}</span>
             </div>
@@ -1078,6 +1609,23 @@
           ${logsText ? `<div class="log-box">${logsText}</div>` : ''}
         </div>
       `;
+    }
+
+
+    async function cancelJob(jobId) {
+      if (!confirm("Bạn có chắc chắn muốn huỷ tiến trình này? Tiến trình đang chạy sẽ bị ép buộc dừng lại.")) return;
+      try {
+        const res = await fetch(`/api/jobs/${jobId}/cancel`, { method: 'POST' });
+        const data = await res.json();
+        if (data.status === 'success') {
+          showToast(data.message, 'success');
+          fetchJobs();
+        } else {
+          showToast(data.message, 'error');
+        }
+      } catch (err) {
+        showToast('Lỗi gửi yêu cầu huỷ: ' + err.message, 'error');
+      }
     }
 
     // Fetch and render files
@@ -1358,11 +1906,358 @@
     }
   }
 
-  // Ghi đè fetchJobs để cũng cập nhật debug select
+  // ======= STEP TABS DATA & LOGIC =======
+  window._currentStepJobId = null;
+
+  function viewJobSteps(jobId) {
+    window._currentStepJobId = jobId;
+    document.querySelectorAll('.stepJobSelect').forEach(sel => sel.value = jobId);
+    switchTab('tab-step5');
+    loadStepsData(jobId);
+  }
+
+  function populateStepJobSelect() {
+    const selects = document.querySelectorAll('.stepJobSelect');
+    const jobs = window._jobsCache || [];
+    selects.forEach(sel => {
+      const currentVal = sel.value || window._currentStepJobId;
+      sel.innerHTML = '<option value="">-- Chọn chiến dịch để xem --</option>';
+      jobs.forEach(j => {
+        const opt = document.createElement('option');
+        opt.value = j.id;
+        const country = (j.country || 'custom').toUpperCase();
+        const status = j.status === 'completed' ? '✅' : (j.status === 'failed' ? '❌' : '⏳');
+        opt.textContent = `${status} ${country} (${j.id.slice(0, 16)}...) ${j.created_at || ''}`;
+        if (j.id === currentVal) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    });
+  }
+
+  function onStepJobSelectChange(jobId) {
+    window._currentStepJobId = jobId;
+    document.querySelectorAll('.stepJobSelect').forEach(sel => sel.value = jobId);
+    if (jobId) {
+      loadStepsData(jobId);
+    }
+  }
+
+  function reloadCurrentStepData() {
+    if (!window._currentStepJobId) {
+      ensureStepDataLoaded();
+      return;
+    }
+    loadStepsData(window._currentStepJobId);
+  }
+
+  async function ensureStepDataLoaded() {
+    if (!window._jobsCache || window._jobsCache.length === 0) {
+      await fetchJobs();
+    }
+    populateStepJobSelect();
+    if (!window._currentStepJobId && window._jobsCache && window._jobsCache.length > 0) {
+      window._currentStepJobId = window._jobsCache[0].id;
+      document.querySelectorAll('.stepJobSelect').forEach(sel => sel.value = window._currentStepJobId);
+    }
+    if (window._currentStepJobId) {
+      loadStepsData(window._currentStepJobId);
+    }
+  }
+
+  function switchStep3SubTab(type) {
+    const btnCand = document.getElementById('step3BtnCand');
+    const btnExcl = document.getElementById('step3BtnExcl');
+    const panelCand = document.getElementById('step3PanelCand');
+    const panelExcl = document.getElementById('step3PanelExcl');
+    if (!btnCand || !btnExcl) return;
+    if (type === 'candidates') {
+      btnCand.classList.add('active');
+      btnExcl.classList.remove('active');
+      if (panelCand) panelCand.style.display = 'block';
+      if (panelExcl) panelExcl.style.display = 'none';
+    } else {
+      btnCand.classList.remove('active');
+      btnExcl.classList.add('active');
+      if (panelCand) panelCand.style.display = 'none';
+      if (panelExcl) panelExcl.style.display = 'block';
+    }
+  }
+
+  function switchStep5SubTab(type) {
+    const btnQual = document.getElementById('step5BtnQual');
+    const btnDrop = document.getElementById('step5BtnDrop');
+    const panelQual = document.getElementById('step5PanelQual');
+    const panelDrop = document.getElementById('step5PanelDrop');
+    if (!btnQual || !btnDrop) return;
+    if (type === 'qualified') {
+      btnQual.classList.add('active');
+      btnDrop.classList.remove('active');
+      if (panelQual) panelQual.style.display = 'block';
+      if (panelDrop) panelDrop.style.display = 'none';
+    } else {
+      btnQual.classList.remove('active');
+      btnDrop.classList.add('active');
+      if (panelQual) panelQual.style.display = 'none';
+      if (panelDrop) panelDrop.style.display = 'block';
+    }
+  }
+
+  function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+      showToast('Đã sao chép từ khoá: ' + text, 'success');
+    }).catch(err => {
+      showToast('Không thể sao chép: ' + err.message, 'error');
+    });
+  }
+
+  async function loadStepsData(jobId) {
+    if (!jobId) return;
+    try {
+      const res = await fetch(`/api/jobs/${jobId}/steps`);
+      if (!res.ok) {
+        showToast('Không tìm thấy dữ liệu bước cho chiến dịch này', 'error');
+        return;
+      }
+      const d = await res.json();
+
+      // Meta badge
+      const metaText = `Chiến dịch: ${d.job_id} · Trạng thái: ${(d.status || '').toUpperCase()} (${d.percent || 0}%)`;
+      document.querySelectorAll('.stepJobMetaBadge').forEach(b => b.innerText = metaText);
+
+      // Render Step 1
+      const s1 = d.step1 || {};
+      const elS1Count = document.getElementById('step1Count');
+      const elS1Country = document.getElementById('step1Country');
+      const elS1Status = document.getElementById('step1Status');
+      if (elS1Count) elS1Count.innerText = s1.count || 0;
+      if (elS1Country) elS1Country.innerText = d.country || '–';
+      if (elS1Status) elS1Status.innerText = (d.stage >= 1 || d.status === 'completed') ? '✅ Đã sinh xong' : '⏳ Đang xử lý...';
+      
+      const tbody1 = document.getElementById('step1TableBody');
+      const queries = s1.queries || [];
+      if (tbody1) {
+        if (queries.length === 0) {
+          tbody1.innerHTML = '<tr><td colspan="3"><div class="empty-state"><div class="empty-state-icon">📝</div><p>Chưa có từ khoá nào được sinh ra.</p></div></td></tr>';
+        } else {
+          tbody1.innerHTML = queries.map((q, idx) => `
+            <tr>
+              <td style="color:var(--text-dim);font-weight:700;">${idx + 1}</td>
+              <td style="font-weight:600;color:#fff;">${escHtml(q)}</td>
+              <td style="text-align:right;">
+                <button class="btn btn-secondary btn-sm" onclick="copyToClipboard('${escHtml(q)}')">📋 Sao chép</button>
+              </td>
+            </tr>
+          `).join('');
+        }
+      }
+
+      // Render Step 2
+      const s2 = d.step2 || {};
+      const elS2Raw = document.getElementById('step2RawCount');
+      const elS2Conc = document.getElementById('step2Concurrency');
+      const elS2Depth = document.getElementById('step2Depth');
+      if (elS2Raw) elS2Raw.innerText = s2.raw_count != null ? s2.raw_count + ' địa điểm' : '0 địa điểm';
+      if (elS2Conc) elS2Conc.innerText = s2.concurrency + ' luồng Playwright';
+      if (elS2Depth) elS2Depth.innerText = s2.depth + ' cuộn';
+
+      // Render Step 3
+      const s3 = d.step3 || {};
+      const candList = s3.candidates || [];
+      const exclList = s3.excluded || [];
+      const elS3Cand = document.getElementById('step3CandCount');
+      const elS3Excl = document.getElementById('step3ExclCount');
+      const elS3Rate = document.getElementById('step3Rate');
+      const elS3SubCand = document.getElementById('step3SubCandBadge');
+      const elS3SubExcl = document.getElementById('step3SubExclBadge');
+
+      const cCount = s3.candidates_count != null ? s3.candidates_count : candList.length;
+      const eCount = s3.excluded_count != null ? s3.excluded_count : exclList.length;
+      if (elS3Cand) elS3Cand.innerText = cCount;
+      if (elS3Excl) elS3Excl.innerText = eCount;
+      const total3 = cCount + eCount;
+      if (elS3Rate) elS3Rate.innerText = total3 > 0 ? Math.round((cCount / total3) * 100) + '%' : '–';
+      if (elS3SubCand) elS3SubCand.innerText = cCount;
+      if (elS3SubExcl) elS3SubExcl.innerText = eCount;
+
+      const tbodyCand = document.getElementById('step3CandTableBody');
+      if (tbodyCand) {
+        if (candList.length === 0) {
+          tbodyCand.innerHTML = '<tr><td colspan="8"><div class="empty-state"><div class="empty-state-icon">🔍</div><p>Chưa có ứng viên nào vượt qua bước lọc Heuristic.</p></div></td></tr>';
+        } else {
+          tbodyCand.innerHTML = candList.map((c, idx) => `
+            <tr>
+              <td style="color:var(--text-dim);">${idx + 1}</td>
+              <td style="font-weight:700;color:#fff;">${escHtml(c.title || '–')}</td>
+              <td><span class="badge-tier badge-tier-2">${escHtml(c.segment || c.category || '–')}</span></td>
+              <td style="text-align:center;font-weight:700;color:var(--accent);">${c.score_total != null ? c.score_total : '–'}</td>
+              <td><span class="badge-tier ${c.priority_tier === 'Tier 1' ? 'badge-tier-1' : (c.priority_tier === 'Tier 2' ? 'badge-tier-2' : 'badge-tier-3')}">${escHtml(c.priority_tier || '–')}</span></td>
+              <td>${c.website ? `<a href="${c.website.startsWith('http')?c.website:'http://'+c.website}" target="_blank" style="color:var(--accent);text-decoration:none;">🔗 ${escHtml(c.website.slice(0,30))}</a>` : '–'}</td>
+              <td style="color:var(--text-sub);">${escHtml(c.phone || '–')}</td>
+              <td style="color:var(--text-sub);">${escHtml(c.city || '–')}</td>
+            </tr>
+          `).join('');
+        }
+      }
+
+      const tbodyExcl = document.getElementById('step3ExclTableBody');
+      if (tbodyExcl) {
+        if (exclList.length === 0) {
+          tbodyExcl.innerHTML = '<tr><td colspan="5"><div class="empty-state"><div class="empty-state-icon">🎉</div><p>Không có địa điểm nào bị loại ở bước này hoặc chưa xử lý xong.</p></div></td></tr>';
+        } else {
+          tbodyExcl.innerHTML = exclList.map((e, idx) => `
+            <tr>
+              <td style="color:var(--text-dim);">${idx + 1}</td>
+              <td style="font-weight:600;color:#fff;">${escHtml(e.title || '–')}</td>
+              <td style="color:var(--text-sub);">${escHtml(e.category || '–')}</td>
+              <td>${e.website ? `<a href="${e.website.startsWith('http')?e.website:'http://'+e.website}" target="_blank" style="color:var(--text-dim);text-decoration:none;">🔗 ${escHtml(e.website.slice(0,25))}</a>` : '–'}</td>
+              <td><span class="reason-text">[-] ${escHtml(e.exclusion_reason || 'Không rõ lý do')}</span></td>
+            </tr>
+          `).join('');
+        }
+      }
+
+      // Render Step 4
+      const s4 = d.step4 || {};
+      const verdicts = s4.verdicts || [];
+      const elS4Total = document.getElementById('step4Total');
+      const elS4Flight = document.getElementById('step4FlightCount');
+      const elS4Form = document.getElementById('step4FormCount');
+      const elS4Iata = document.getElementById('step4IataCount');
+      if (elS4Total) elS4Total.innerText = s4.verdicts_count || verdicts.length;
+      let flCount = 0, formCount = 0, iataCount = 0;
+      verdicts.forEach(v => {
+        if (v.flightticketing) flCount++;
+        if (v.onlinesearch) formCount++;
+        if (v.iata) iataCount++;
+      });
+      if (elS4Flight) elS4Flight.innerText = flCount;
+      if (elS4Form) elS4Form.innerText = formCount;
+      if (elS4Iata) elS4Iata.innerText = iataCount;
+
+      const tbody4 = document.getElementById('step4TableBody');
+      if (tbody4) {
+        if (verdicts.length === 0) {
+          tbody4.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-state-icon">🌐</div><p>Chưa có kết quả thẩm định website nào.</p></div></td></tr>';
+        } else {
+          tbody4.innerHTML = verdicts.map((v, idx) => {
+            const isReachable = v.reachable == 1 || v.real == 1;
+            const hasFlight = v.flightticketing == 1;
+            const hasSearch = v.onlinesearch == 1;
+            const hasIata = v.iata == 1;
+            return `
+              <tr>
+                <td style="color:var(--text-dim);">${idx + 1}</td>
+                <td style="font-weight:700;"><a href="https://${v.domain}" target="_blank" style="color:var(--accent);text-decoration:none;">🌐 ${escHtml(v.domain)}</a></td>
+                <td>
+                  <span class="badge-tier ${isReachable ? 'badge-pass' : 'badge-drop'}">
+                    ${isReachable ? '✅ Truy cập tốt' : '❌ Lỗi kết nối / DNS'}
+                  </span>
+                </td>
+                <td>
+                  <span class="badge-tier ${hasFlight ? 'badge-pass' : 'badge-drop'}">
+                    ${hasFlight ? '✈️ Có bán vé' : 'Không bán vé'}
+                  </span>
+                </td>
+                <td>${hasSearch ? '<span class="badge-tier badge-tier-2">🔍 Có Form vé</span>' : '<span style="color:var(--text-dim);">Không</span>'}</td>
+                <td>${hasIata ? `<span class="badge-tier badge-tier-1">🎖️ ${escHtml(v.iata_ev || 'IATA')}</span>` : '<span style="color:var(--text-dim);">Không</span>'}</td>
+                <td style="font-size:12px;color:var(--text-sub);">${escHtml(v.evidence || '–')}</td>
+              </tr>
+            `;
+          }).join('');
+        }
+      }
+
+      // Render Step 5
+      const s5 = d.step5 || {};
+      const qual = s5.qualified_leads || [];
+      const drop = s5.dropped_leads || [];
+      let t1 = 0, t2 = 0, t3 = 0;
+      qual.forEach(q => {
+        const tier = (q.tier || '').toLowerCase();
+        if (tier.includes('1')) t1++;
+        else if (tier.includes('2')) t2++;
+        else t3++;
+      });
+      const elS5T1 = document.getElementById('step5T1Count');
+      const elS5T2 = document.getElementById('step5T2Count');
+      const elS5T3 = document.getElementById('step5T3Count');
+      const elS5Drop = document.getElementById('step5DropCount');
+      const elS5SubQual = document.getElementById('step5SubQualBadge');
+      const elS5SubDrop = document.getElementById('step5SubDropBadge');
+      if (elS5T1) elS5T1.innerText = t1;
+      if (elS5T2) elS5T2.innerText = t2;
+      if (elS5T3) elS5T3.innerText = t3;
+      if (elS5Drop) elS5Drop.innerText = drop.length;
+      if (elS5SubQual) elS5SubQual.innerText = qual.length;
+      if (elS5SubDrop) elS5SubDrop.innerText = drop.length;
+
+      const excelBtnContainer = document.getElementById('step5DownloadExcelBtnContainer');
+      if (excelBtnContainer) {
+        if (d.status === 'completed' || qual.length > 0) {
+          excelBtnContainer.innerHTML = `
+            <a href="/api/jobs/${jobId}/excel" class="btn btn-primary btn-sm">
+              <span>📥</span> Tải File Excel Leads (${qual.length} Leads)
+            </a>
+          `;
+        } else {
+          excelBtnContainer.innerHTML = '';
+        }
+      }
+
+      const tbodyQual = document.getElementById('step5QualTableBody');
+      if (tbodyQual) {
+        if (qual.length === 0) {
+          tbodyQual.innerHTML = '<tr><td colspan="10"><div class="empty-state"><div class="empty-state-icon">🏆</div><p>Chưa có leads nào đạt chuẩn cho chiến dịch này.</p></div></td></tr>';
+        } else {
+          tbodyQual.innerHTML = qual.map(q => {
+            const tierStr = q.tier || (q.online_flight_search && q.iata_visible ? 'Tier 1' : (q.online_flight_search || q.iata_visible ? 'Tier 2' : 'Tier 3'));
+            const tierClass = tierStr === 'Tier 1' ? 'badge-tier-1' : (tierStr === 'Tier 2' ? 'badge-tier-2' : 'badge-tier-3');
+            return `
+              <tr>
+                <td><span class="badge-tier ${tierClass}">${tierStr}</span></td>
+                <td style="font-weight:700;color:#fff;">${escHtml(q.name || q.gmaps_name || '–')}</td>
+                <td>${q.website ? `<a href="${q.website.startsWith('http')?q.website:'http://'+q.website}" target="_blank" style="color:var(--accent);text-decoration:none;">🔗 ${escHtml(q.website.slice(0,25))}</a>` : '–'}</td>
+                <td>${q.sells_air_tickets ? '✅' : '–'}</td>
+                <td>${q.online_flight_search ? '🔍 Có' : '–'}</td>
+                <td>${q.iata_visible ? `<span class="badge-tier badge-tier-1">${escHtml(q.iata_ev || 'IATA')}</span>` : '–'}</td>
+                <td style="color:var(--text-sub);">${escHtml(q.city || '–')}</td>
+                <td style="color:var(--text-sub);">${escHtml(q.phone || '–')}</td>
+                <td style="color:var(--text-sub);">${escHtml(q.emails || '–')}</td>
+                <td style="font-size:12px;color:#a5b4fc;">${escHtml(q.reason || '–')}</td>
+              </tr>
+            `;
+          }).join('');
+        }
+      }
+
+      const tbodyDrop = document.getElementById('step5DropTableBody');
+      if (tbodyDrop) {
+        if (drop.length === 0) {
+          tbodyDrop.innerHTML = '<tr><td colspan="5"><div class="empty-state"><div class="empty-state-icon">🎉</div><p>Không có đơn vị nào bị loại trong danh sách phân Tier.</p></div></td></tr>';
+        } else {
+          tbodyDrop.innerHTML = drop.map((dr, idx) => `
+            <tr>
+              <td style="color:var(--text-dim);">${idx + 1}</td>
+              <td style="font-weight:600;color:#fff;">${escHtml(dr.name || dr.gmaps_name || '–')}</td>
+              <td>${dr.website ? `<a href="${dr.website.startsWith('http')?dr.website:'http://'+dr.website}" target="_blank" style="color:var(--text-dim);text-decoration:none;">🔗 ${escHtml(dr.website.slice(0,25))}</a>` : '–'}</td>
+              <td><span class="reason-text">[-] ${escHtml(dr.reason || 'Bị loại bỏ theo quy tắc Tier')}</span></td>
+              <td style="font-size:12px;color:var(--text-sub);">${escHtml(dr.evidence || '–')}</td>
+            </tr>
+          `).join('');
+        }
+      }
+
+    } catch (err) {
+      console.error('loadStepsData error:', err);
+    }
+  }
+
+  // Ghi đè fetchJobs để cập nhật cả debug select và step job select
   const _origFetchJobs = fetchJobs;
   fetchJobs = async function() {
     await _origFetchJobs();
     populateDebugJobSelect();
+    populateStepJobSelect();
   };
 
   </script>
