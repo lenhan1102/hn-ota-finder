@@ -287,6 +287,20 @@ def probe(page, url, timeout_ms: int = 8000):
                 body = (page.inner_text("body") or "")[:7000]
             except Exception:
                 body = ""
+            
+            import os
+            title_lower = title.lower()
+            body_lower = body.lower()
+            if any(k in title_lower for k in ["just a moment", "cloudflare", "attention required", "access denied", "403 forbidden", "security challenge"]) or "cf-browser-verification" in body_lower or "captcha" in body_lower:
+                try:
+                    os.makedirs("debug_screenshots", exist_ok=True)
+                    safe_domain = u.replace("https://", "").replace("http://", "").replace("/", "_").replace(":", "_")
+                    screenshot_path = f"debug_screenshots/blocked_{safe_domain}.png"
+                    page.screenshot(path=screenshot_path)
+                    print(f"\n[PHÁT HIỆN CHẶN/CAPTCHA] Đã chụp ảnh màn hình lưu tại: {screenshot_path}")
+                except Exception as ex:
+                    print(f"\n[LỖI CHỤP ẢNH] Không thể chụp ảnh màn hình cho {u}: {ex}")
+
             if not title and len(body) < 40:
                 continue  # render rong -> thu bien the tiep theo
             full, basic, detail = check_flight_form(page)
