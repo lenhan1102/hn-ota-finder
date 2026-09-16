@@ -6,6 +6,16 @@ echo "==========================================================================
 echo "🚀 BẮT ĐẦU QUY TRÌNH DEPLOY GOOGLE-MAPS-SCRAPER-FIND-OTA"
 echo "================================================================================"
 
+# Tự động nạp PATH cho PM2 nếu chưa có trong môi trường non-interactive
+if ! command -v pm2 &> /dev/null; then
+    for p in "$HOME/.nvm/versions/node/"*/bin /usr/local/bin /usr/bin; do
+        if [ -x "$p/pm2" ]; then
+            export PATH="$(dirname "$p/pm2"):$PATH"
+            break
+        fi
+    done
+fi
+
 # 1. Cập nhật mã nguồn mới nhất
 echo "--> [1/5] Pulling mã nguồn mới nhất từ git..."
 git pull origin main
