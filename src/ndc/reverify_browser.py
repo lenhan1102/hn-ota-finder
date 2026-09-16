@@ -243,17 +243,45 @@ IATA_RE  = re.compile(r"iata|asita", re.I)
 IATA_NUM = re.compile(r"iata[^0-9]{0,20}(\d{7,8})", re.I)
 
 
-def probe(page, url):
+def check_domain_resolves(url_or_domain: str, timeout: float = 1.0) -> bool:
+    """Kiem tra nhanh DNS cua domain truoc khi cho Chromium load de tranh timeout vo tan."""
+    import socket
+    from urllib.parse import urlparse
+    try:
+        d = str(url_or_domain).strip().lower()
+        if "://" in d:
+            host = urlparse(d).netloc.split(":")[0]
+        else:
+            host = d.split("/")[0].split(":")[0]
+        if host.startswith("www."):
+            host = host[4:]
+        if not host:
+            return False
+        socket.setdefaulttimeout(timeout)
+        try:
+            socket.getaddrinfo(host, None)
+            return True
+        except Exception:
+            socket.getaddrinfo("www." + host, None)
+            return True
+    except Exception:
+        return False
+
+
+def probe(page, url, timeout_ms: int = 8000):
     """Thu lan luot https:// -> https://www. -> http:// truoc khi ket luan site chet."""
+    if not check_domain_resolves(url):
+        return {"loaded": False, "error": "DNS_PROBE_FINISHED_NXDOMAIN (Tên miền không tồn tại hoặc chết DNS)"}
+
     last = "all variants failed"
     for u in (url, url.replace("https://", "https://www."), url.replace("https://", "http://")):
         try:
-            resp = page.goto(u, wait_until="domcontentloaded", timeout=25000)
+            resp = page.goto(u, wait_until="domcontentloaded", timeout=timeout_ms)
             try:
-                page.wait_for_load_state("networkidle", timeout=8000)
+                page.wait_for_load_state("networkidle", timeout=2000)
             except Exception:
                 pass
-            time.sleep(2.5)
+            time.sleep(1.0)
             title = (page.title() or "").strip()
             try:
                 body = (page.inner_text("body") or "")[:7000]
@@ -270,7 +298,11 @@ def probe(page, url):
                     "iata_number": m.group(1) if m else "",
                     "snippet": body[:400].replace("\n", " ")}
         except Exception as e:
-            last = str(e)[:120]
+            err_str = str(e)
+            last = err_str[:120]
+            # Neu loi DNS hoac tu choi ket noi thi cac bien the khac cung se loi -> break ngay
+            if any(k in err_str for k in ["ERR_NAME_NOT_RESOLVED", "ERR_CONNECTION_REFUSED", "NXDOMAIN", "ERR_ADDRESS_UNREACHABLE", "ERR_CONNECTION_RESET"]):
+                break
     return {"loaded": False, "error": last}
 
 

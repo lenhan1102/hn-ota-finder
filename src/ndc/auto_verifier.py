@@ -23,9 +23,9 @@ except ImportError:
     sync_playwright = None
 
 try:
-    from .reverify_browser import probe, check_flight_form
+    from .reverify_browser import probe, check_flight_form, check_domain_resolves
 except ImportError:
-    from reverify_browser import probe, check_flight_form
+    from reverify_browser import probe, check_flight_form, check_domain_resolves
 
 
 # Danh sach tu khoa nhan dien ve may bay
@@ -115,22 +115,44 @@ Tra ve DUY NHAT 1 JSON object co dung cac truong sau (gia tri 0 hoac 1, rieng co
 
 
 def run_auto_verification(
-    candidates_csv: str | Path,
-    output_verdicts_csv: str | Path,
-    output_reverify_json: str | Path,
+    candidates_data,
+    output_verdicts_json: str | Path = None,
+    output_reverify_json: str | Path = None,
     locale: str = "en-US",
     max_sites: int = 0,
-) -> tuple[int, int]:
-    df = pd.read_csv(candidates_csv)
+    headless: bool = True,
+) -> tuple[list[dict], list[dict]]:
+    if isinstance(candidates_data, pd.DataFrame):
+        df = candidates_data.copy()
+    elif isinstance(candidates_data, list):
+        df = pd.DataFrame(candidates_data)
+    else:
+        in_str = str(candidates_data)
+        if in_str.endswith(".json"):
+            import json
+            try:
+                with open(in_str, "r", encoding="utf-8") as f:
+                    df = pd.DataFrame(json.load(f))
+            except Exception:
+                with open(in_str, "r", encoding="utf-8") as f:
+                    df = pd.DataFrame([json.loads(l) for l in f if l.strip()])
+        else:
+            df = pd.read_csv(in_str)
+
     if "proper_domain" in df.columns:
         domain_col = "proper_domain"
     elif "domain" in df.columns:
         domain_col = "domain"
+    elif "website_domain" in df.columns:
+        domain_col = "website_domain"
     elif "website" in df.columns:
         df["_domain"] = df["website"].apply(norm_domain)
         domain_col = "_domain"
     else:
-        raise ValueError("Khong tim thay cot domain hoac website trong candidates CSV")
+        # Neu rong, tao danh sach rong
+        if df.empty:
+            return [], []
+        raise ValueError("Khong tim thay cot domain hoac website trong candidates")
 
     unique_sites = []
     seen = set()
@@ -153,7 +175,10 @@ def run_auto_verification(
     if max_sites > 0:
         unique_sites = unique_sites[:max_sites]
 
-    print(f"Bat dau tham dinh {len(unique_sites)} website ung vien...")
+    print(f"\n{'='*70}")
+    print(f"  BẮT ĐẦU THẨM ĐỊNH {len(unique_sites)} WEBSITE BẰNG PLAYWRIGHT CHROMIUM")
+    print(f"  Headless: {headless} (Cửa sổ trình duyệt: {'ẨN' if headless else 'HIỆN THỰC TẾ'})")
+    print(f"{'='*70}")
 
     openai_key = os.getenv("OPENAI_API_KEY", "").strip()
     gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
@@ -172,23 +197,53 @@ def run_auto_verification(
         raise RuntimeError("Playwright chua duoc cai dat.")
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(
+            headless=headless,
+            args=["--disable-dev-shm-usage", "--no-sandbox"],
+        )
         ctx = browser.new_context(
             ignore_https_errors=True,
             viewport={"width": 1280, "height": 800},
             locale=locale,
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         )
-        ctx.set_default_timeout(25000)
+        ctx.set_default_timeout(8000)
 
         for i, item in enumerate(unique_sites, 1):
             dom = item["domain"]
             url = item["url"]
             print(f"  [{i}/{len(unique_sites)}] Dang kiem tra: {dom}...", end=" ", flush=True)
 
+            # DNS Pre-check sieu nhanh (0.02s) de tranh ngam timeout vo tan tren site chet/NXDOMAIN
+            if not check_domain_resolves(dom):
+                print(f"[LOAD_FAILED] (Domain chet / DNS NXDOMAIN - Bo qua ngay lap tuc)")
+                probe_res = {
+                    "loaded": False,
+                    "error": "DNS_PROBE_FINISHED_NXDOMAIN (Tên miền không tồn tại hoặc chết DNS)",
+                    "name": item["name"],
+                    "url": url,
+                    "domain": dom,
+                }
+                reverify_records.append(probe_res)
+                verdicts.append({
+                    "domain": dom,
+                    "real": 0,
+                    "ota": 0,
+                    "airline": 0,
+                    "flightticketing": 0,
+                    "onlinesearch": 0,
+                    "iata": 0,
+                    "iata_ev": "not found",
+                    "puretour": 0,
+                    "conf": 0.0,
+                    "evidence": "Site chet (NXDOMAIN / DNS resolve failed)",
+                    "reachable": 0,
+                })
+                continue
+
             page = ctx.new_page()
             try:
-                probe_res = probe(page, url)
+                probe_res = probe(page, url, timeout_ms=8000)
             except Exception as e:
                 probe_res = {"loaded": False, "error": str(e)[:100]}
             finally:
@@ -242,22 +297,30 @@ def run_auto_verification(
             verdict["reachable"] = 1 if probe_res.get("loaded") else 0
             verdicts.append(verdict)
 
-            status_str = "OK" if probe_res.get("loaded") else "FAIL"
-            flight_str = "Ban ve" if verdict.get("flightticketing") else "Khong ve"
-            print(f"[{status_str}] -> {flight_str}")
+            status_str = "LOAD_OK" if probe_res.get("loaded") else "LOAD_FAILED"
+            flight_str = "CÓ BÁN VÉ (Qualified)" if verdict.get("flightticketing") else "KHÔNG BÁN VÉ"
+            ev_str = verdict.get("evidence", "")
+            title_p = probe_res.get("title", "")[:40]
+            print(f"[{status_str}] | Title: '{title_p}' -> {flight_str}")
+            if probe_res.get("flight_form"):
+                print(f"      -> Phát hiện Form vé: {probe_res.get('flight_form_detail')}")
+            if probe_res.get("iata_found"):
+                print(f"      -> Phát hiện IATA: {probe_res.get('iata_number') or 'Có'}")
 
         browser.close()
 
-    output_reverify_json = Path(output_reverify_json)
-    output_reverify_json.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_reverify_json, "w", encoding="utf-8") as f:
-        json.dump(reverify_records, f, ensure_ascii=False, indent=2)
+    if output_reverify_json:
+        output_reverify_json = Path(output_reverify_json)
+        output_reverify_json.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_reverify_json, "w", encoding="utf-8") as f:
+            json.dump(reverify_records, f, ensure_ascii=False, indent=2)
+        print(f"Da luu reverify.json tai {output_reverify_json}")
 
-    output_verdicts_csv = Path(output_verdicts_csv)
-    output_verdicts_csv.parent.mkdir(parents=True, exist_ok=True)
-    vdf = pd.DataFrame(verdicts)
-    vdf.to_csv(output_verdicts_csv, index=False)
+    if output_verdicts_json:
+        output_verdicts_json = Path(output_verdicts_json)
+        output_verdicts_json.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_verdicts_json, "w", encoding="utf-8") as f:
+            json.dump(verdicts, f, ensure_ascii=False, indent=2)
+        print(f"Da luu verdicts.json tai {output_verdicts_json}")
 
-    print(f"Da luu {len(verdicts)} verdicts tai {output_verdicts_csv}")
-    print(f"Da luu reverify.json tai {output_reverify_json}")
-    return len(verdicts), len(reverify_records)
+    return verdicts, reverify_records

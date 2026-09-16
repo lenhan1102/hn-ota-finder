@@ -42,15 +42,19 @@ def execute_pipeline(
     custom_keywords: list[str] = None,
     lang: str = "en",
     depth: int = 10,
-    concurrency: int = 4,
+    concurrency: int = 1,
     output_dir: str = "/app/output",
-    data_dir: str = "/app/data",
+    data_dir: str = None,
     scraper_bin: str = "/usr/bin/google-maps-scraper",
     max_sites: int = 0,
     market_type: str = "auto",
     skip_scrape: bool = False,
+    headless: bool = True,
     progress_callback=None,
 ) -> dict:
+    import tempfile
+    import json
+
     def update_progress(stage: int, stage_name: str, percent: int, message: str):
         print(f"[{stage}/5] ({percent}%) {stage_name}: {message}")
         if progress_callback:
@@ -62,22 +66,12 @@ def execute_pipeline(
     country_key = country.lower().strip() if country else "custom"
     task_name = country_key if country_key != "custom" else (sanitize_filename(custom_keywords[0]) if custom_keywords else "custom")
     
-    # Tao thu muc
-    work_dir = Path(data_dir) / f"{task_name}_{int(time.time())}"
-    work_dir.mkdir(parents=True, exist_ok=True)
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-
-    queries_file = work_dir / "queries.txt"
-    raw_csv = work_dir / "raw_results.csv"
-    pipeline_dir = work_dir / "pipeline_results"
-    pipeline_dir.mkdir(parents=True, exist_ok=True)
-    candidates_csv = pipeline_dir / "combined_candidates.csv"
-    verdicts_csv = work_dir / "verdicts.csv"
-    reverify_json = work_dir / "reverify.json"
     
     timestamp_str = time.strftime("%Y%m%d_%H%M%S")
-    final_excel = out_dir / f"{task_name}_ndc_leads_{timestamp_str}.xlsx"
+    final_json = out_dir / f"{task_name}_leads_{timestamp_str}.json"
+    excel_virtual_name = f"{task_name}_ndc_leads_{timestamp_str}.xlsx"
 
     # -------------------------------------------------------------------------
     # BƯỚC 1: SINH DANH SÁCH QUERIES
@@ -106,95 +100,186 @@ def execute_pipeline(
             ]
             print(f"    Chua co config cho {country_key}, su dung {len(queries)} tu khoa mac dinh.")
 
-    queries_file.write_text("\n".join(queries) + "\n", encoding="utf-8")
-    update_progress(1, "Sinh danh sach tu khoa", 20, f"Da sinh xong {len(queries)} queries.")
+    update_progress(1, "Sinh danh sach tu khoa", 20, f"Da sinh xong {len(queries)} queries: {queries[:3]}")
 
     # -------------------------------------------------------------------------
-    # BƯỚC 2: CÀO DỮ LIỆU GOOGLE MAPS
+    # BƯỚC 2: CÀO DỮ LIỆU GOOGLE MAPS (IN-MEMORY QUA TEMPFILE)
     # -------------------------------------------------------------------------
-    update_progress(2, "Cao du lieu Google Maps", 25, f"Dang khoi dong {concurrency} trinh duyet Playwright...")
-    if skip_scrape and raw_csv.exists() and raw_csv.stat().st_size > 0:
-        print(f"    Bo qua cao vi da co {raw_csv}.")
-    else:
-        candidates_bin = [
-            scraper_bin,
-            str(SRC_DIR.parent / "bin" / "google-maps-scraper"),
-            str(SRC_DIR.parent / "bin" / "google-maps-scraper.exe"),
-            str(SRC_DIR.parent.parent / "google-maps-scraper" / "google-maps-scraper"),
-            "/usr/bin/google-maps-scraper",
-            "/usr/local/bin/google-maps-scraper",
-        ]
-        scraper_executable = shutil.which(scraper_bin) or shutil.which("google-maps-scraper")
-        if not scraper_executable or not Path(scraper_executable).exists():
-            for p in candidates_bin:
-                if p and Path(p).exists():
-                    scraper_executable = p
-                    break
-        if not scraper_executable or not Path(scraper_executable).exists():
-            raise FileNotFoundError(f"Khong tim thay binary google-maps-scraper tai {scraper_bin}")
+    update_progress(2, "Cao du lieu Google Maps", 25, f"Dang khoi dong {concurrency} trinh duyet (Headless={headless})...")
+    candidates_bin = [
+        scraper_bin,
+        str(SRC_DIR.parent / "bin" / "google-maps-scraper"),
+        str(SRC_DIR.parent / "bin" / "google-maps-scraper.exe"),
+        str(SRC_DIR.parent.parent / "google-maps-scraper" / "google-maps-scraper"),
+        "/usr/bin/google-maps-scraper",
+        "/usr/local/bin/google-maps-scraper",
+    ]
+    scraper_executable = shutil.which(scraper_bin) or shutil.which("google-maps-scraper")
+    if not scraper_executable or not Path(scraper_executable).exists():
+        for p in candidates_bin:
+            if p and Path(p).exists():
+                scraper_executable = p
+                break
+    if not scraper_executable or not Path(scraper_executable).exists():
+        raise FileNotFoundError(f"Khong tim thay binary google-maps-scraper tai {scraper_bin}")
 
+    # Tạo temp file cho queries và kết quả scraper dạng JSON
+    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8") as qf:
+        qf.write("\n".join(queries) + "\n")
+        temp_queries_file = qf.name
+
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as rf:
+        temp_results_json = rf.name
+
+    raw_places = []
+    try:
         scraper_cmd = [
             scraper_executable,
-            "-input", str(queries_file),
-            "-results", str(raw_csv),
+            "-input", temp_queries_file,
+            "-results", temp_results_json,
+            "-json",
             "-lang", lang,
             "-depth", str(depth),
             "-c", str(concurrency),
+            "-browser-pool-size", str(concurrency),
+            "-pages-per-browser", "1",
             "-exit-on-inactivity", "3m",
             "-email",
         ]
+        if not headless:
+            scraper_cmd.append("-debug")
+
         print("    Executing:", " ".join(scraper_cmd))
         t0 = time.time()
         subprocess.run(scraper_cmd, check=True)
         print(f"    Cao xong trong {int(time.time() - t0)} giay.")
 
-    if not raw_csv.exists() or raw_csv.stat().st_size == 0:
-        raise RuntimeError(f"File {raw_csv} rong hoac khong ton tai sau khi cao.")
-    update_progress(2, "Cao du lieu Google Maps", 50, "Cao thô hoan tat, bat dau loc rac.")
+        # Đọc dữ liệu JSON vào RAM ngay lập tức (hỗ trợ cả JSON Array và JSON Lines)
+        if Path(temp_results_json).exists() and Path(temp_results_json).stat().st_size > 0:
+            with open(temp_results_json, "r", encoding="utf-8", errors="replace") as f:
+                content = f.read().strip()
+                if content:
+                    try:
+                        parsed = json.loads(content)
+                        if isinstance(parsed, list):
+                            raw_places = parsed
+                        elif isinstance(parsed, dict):
+                            raw_places = [parsed]
+                    except json.JSONDecodeError:
+                        # Fallback cho JSON Lines (mỗi dòng là một JSON object)
+                        raw_places = []
+                        for line in content.splitlines():
+                            line_s = line.strip()
+                            if line_s:
+                                try:
+                                    raw_places.append(json.loads(line_s))
+                                except Exception:
+                                    pass
+            print(f"    Doc thanh cong {len(raw_places)} dia diem tu scraper vao RAM.")
+    finally:
+        # Xoá ngay file tạm sau khi đã nạp dữ liệu vào RAM để tránh đầy đĩa server
+        try:
+            os.unlink(temp_queries_file)
+        except Exception:
+            pass
+        try:
+            os.unlink(temp_results_json)
+        except Exception:
+            pass
+
+    raw_count = len(raw_places) if isinstance(raw_places, list) else 0
+    if raw_count == 0:
+        msg = (
+            "Google Maps khong tra ve ket qua nao cho tu khoa nay. "
+            "Goi y: Dung tu khoa cu the hon, vi du: "
+            "'dai ly ve may bay Ha Noi', 'travel agency Hanoi', "
+            "'phong ve may bay quan 1', 'air ticket Ho Chi Minh'. "
+            "Tranh dung ten dia danh chung chung nhu 'Viet Nam' hoac 'Ha Noi'."
+        )
+        update_progress(2, "Cao du lieu Google Maps", 50, f"[WARN] {msg}")
+        update_progress(5, "Hoan tat", 100, f"Khong co ket qua. {msg}")
+        return {
+            "country": country_key,
+            "task_name": task_name,
+            "json_path": "",
+            "json_filename": "",
+            "excel_filename": "",
+            "json_size_bytes": 0,
+            "qualified_count": 0,
+            "dropped_count": 0,
+            "total_leads": 0,
+            "leads_data": {},
+            "intermediate": {"queries": queries, "raw_count": 0, "candidates_count": 0},
+            "warning": msg,
+        }
+
+    print(f"    [BƯỚC 2 KẾT QUẢ] Google Maps cào được {raw_count} doanh nghiệp thô (In-Memory).")
+    update_progress(2, "Cao du lieu Google Maps", 50, f"Cao thô hoan tat: {raw_count} doanh nghiep. Bat dau loc rac...")
 
     # -------------------------------------------------------------------------
-    # BƯỚC 3: LỌC RÁC SƠ BỘ & CHẤM ĐIỂM PANDAS
+    # BƯỚC 3: LỌC RÁC SƠ BỘ & CHẤM ĐIỂM HEURISTIC (THUẦN IN-MEMORY)
     # -------------------------------------------------------------------------
     update_progress(3, "Loc rac so bo & Heuristic", 55, "Dang loai hang bay, tour thuan, SIM visa...")
-    run_pipeline(str(raw_csv), country_key, str(pipeline_dir))
-    if not candidates_csv.exists():
-        raise RuntimeError(f"Khong tim thay {candidates_csv} sau khi loc.")
-    update_progress(3, "Loc rac so bo & Heuristic", 65, "Loc rac thanh cong, da co danh sach ung vien.")
+    candidates = run_pipeline(raw_places, country=country_key, output_dir=None)
+    cand_count = len(candidates)
+    print(f"    [BƯỚC 3 KẾT QUẢ] Sau lọc Heuristic còn lại {cand_count} ứng viên đủ điều kiện thẩm định.")
+
+    if cand_count == 0:
+        msg = f"0/{raw_count} doanh nghiep vuot qua buoc loc Heuristic."
+        print(f"    [WARN] {msg}")
+        update_progress(3, "Loc rac so bo & Heuristic", 65, msg)
+        update_progress(5, "Hoan tat", 100, "Khong co ung vien nao vuot qua loc Heuristic.")
+        return {
+            "country": country_key,
+            "task_name": task_name,
+            "json_path": "",
+            "json_filename": "",
+            "excel_filename": "",
+            "json_size_bytes": 0,
+            "qualified_count": 0,
+            "dropped_count": 0,
+            "total_leads": 0,
+            "leads_data": {},
+            "intermediate": {"queries": queries, "raw_count": raw_count, "candidates_count": 0},
+        }
+
+    update_progress(3, "Loc rac so bo & Heuristic", 65, f"Loc rac xong: giu lai {cand_count} ung vien sang buoc tham dinh web.")
 
     # -------------------------------------------------------------------------
-    # BƯỚC 4: THẨM ĐỊNH WEBSITE THỰC TẾ
+    # BƯỚC 4: THẨM ĐỊNH WEBSITE THỰC TẾ (THUẦN IN-MEMORY)
     # -------------------------------------------------------------------------
-    update_progress(4, "Tham dinh website", 70, "Dang mo Chromium kiem tra form ve va IATA...")
-    v_count, rv_count = run_auto_verification(
-        candidates_csv=candidates_csv,
-        output_verdicts_csv=verdicts_csv,
-        output_reverify_json=reverify_json,
+    update_progress(4, "Tham dinh website", 70, f"Dang mo Chromium (Headless={headless}) kiem tra form ve va IATA cho {cand_count} web...")
+    verdicts, reverify_records = run_auto_verification(
+        candidates_data=candidates,
         locale="vi-VN" if country_key == "vietnam" else "en-US",
         max_sites=max_sites,
+        headless=headless,
     )
-    update_progress(4, "Tham dinh website", 85, f"Da tham dinh {v_count} websites ung vien.")
+    v_count = len(verdicts)
+    update_progress(4, "Tham dinh website", 85, f"Da tham dinh xong {v_count} websites ung vien.")
 
     # -------------------------------------------------------------------------
-    # BƯỚC 5: PHÂN TIER & XUẤT EXCEL
+    # BƯỚC 5: PHÂN TIER & XUẤT JSON KẾT QUẢ DUY NHẤT (KHÔNG TẠO EXCEL TĨNH)
     # -------------------------------------------------------------------------
-    update_progress(5, "Phan Tier & Xuat Excel", 90, "Dang tong hop va dinh dang file Excel 2 sheet...")
+    update_progress(5, "Phan Tier & Xuat JSON", 90, "Dang tong hop phan Tier va tao JSON leads...")
     if market_type == "ota_first" or (market_type == "auto" and country_key in ["indonesia", "philippines"]):
         req_online = True
     else:
         req_online = False
 
-    qual, drop, out = run_tiering(
-        verdicts_csv=str(verdicts_csv),
+    qual, drop, leads_data = run_tiering(
+        verdicts_data=verdicts,
         country=country_key,
-        output_xlsx=str(final_excel),
-        reverify_json=str(reverify_json),
-        contacts_csv=str(candidates_csv),
+        reverify_data=reverify_records,
+        contacts_data=candidates,
         require_online_search=req_online,
+        output_json=str(final_json),
+        output_xlsx=None,  # Không lưu Excel tĩnh trên đĩa
     )
 
-    update_progress(5, "Hoan tat", 100, f"Xuat file Excel thanh cong: {final_excel.name}")
+    update_progress(5, "Hoan tat", 100, f"Hoan tat phan tier! Da tao JSON leads ({len(qual)} qualified, {len(drop)} dropped)")
     print("=" * 80)
-    print(f"FILE EXCEL DA SAN SANG: {final_excel}")
+    print(f"JSON LEADS SAN SANG TAI: {final_json}")
     print(f"   • Qualified: {len(qual)} dai ly")
     print(f"   • Dropped:   {len(drop)} don vi")
     print("=" * 80)
@@ -202,12 +287,22 @@ def execute_pipeline(
     return {
         "country": country_key,
         "task_name": task_name,
-        "excel_path": str(final_excel),
-        "excel_filename": final_excel.name,
-        "excel_size_bytes": final_excel.stat().st_size if final_excel.exists() else 0,
+        "json_path": str(final_json),
+        "json_filename": final_json.name,
+        "excel_filename": excel_virtual_name,
+        "json_size_bytes": final_json.stat().st_size if final_json.exists() else 0,
         "qualified_count": len(qual),
         "dropped_count": len(drop),
         "total_leads": len(qual) + len(drop),
+        "leads_data": leads_data,
+        "intermediate": {
+            "queries": queries,
+            "raw_count": raw_count,
+            "candidates_count": cand_count,
+            "candidates": candidates[:100],
+            "verdicts": verdicts[:100],
+            "reverify": reverify_records[:100],
+        },
         "status": "completed",
     }
 
@@ -218,7 +313,7 @@ def parse_args():
     p.add_argument("--keywords", nargs="*", default=None, help="Tu khoa tuy chinh (ngan cach bang dau cach)")
     p.add_argument("--lang", default="en", help="Ngon ngu cao Google Maps (mac dinh: en)")
     p.add_argument("--depth", type=int, default=10, help="Do sau cuon trang (mac dinh: 10)")
-    p.add_argument("--concurrency", "-c", type=int, default=4, help="So luong trinh duyet chay song song (mac dinh: 4)")
+    p.add_argument("--concurrency", "-c", type=int, default=1, help="So luong trinh duyet chay song song (mac dinh: 1)")
     p.add_argument("--output-dir", default="/app/output", help="Thu muc xuat ket qua Excel (mac dinh: /app/output)")
     p.add_argument("--data-dir", default="/app/data", help="Thu muc chua du lieu trung gian (mac dinh: /app/data)")
     p.add_argument("--scraper-bin", default="/usr/bin/google-maps-scraper", help="Duong dan binary google-maps-scraper")
@@ -226,6 +321,8 @@ def parse_args():
     p.add_argument("--skip-scrape", action="store_true", help="Bo qua buoc cao neu da co raw_results.csv")
     p.add_argument("--market-type", choices=["auto", "ota_first", "consolidator"], default="auto",
                    help="Chuan thi truong: ota_first hoac consolidator")
+    p.add_argument("--headful", action="store_true", default=False,
+                   help="Mo cua so trinh duyet truc quan (mac dinh: False - chay ngam headless)")
     return p.parse_args()
 
 
@@ -244,6 +341,7 @@ def main():
         max_sites=args.max_sites,
         market_type=args.market_type,
         skip_scrape=args.skip_scrape,
+        headless=not args.headful,
     )
 
 

@@ -326,26 +326,23 @@
       font-size: 12px;
     }
 
-    /* Accordion Settings */
-    details.advanced-box {
+    /* Advanced Settings Box */
+    .advanced-box {
       background: rgba(10, 14, 26, 0.4);
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
-      padding: 14px 18px;
+      padding: 16px 18px;
       margin-bottom: 20px;
     }
 
-    details.advanced-box summary {
-      cursor: pointer;
+    .advanced-box .advanced-box-title {
       font-size: 13px;
       font-weight: 600;
-      color: var(--text-sub);
-      user-select: none;
-    }
-
-    details.advanced-box[open] summary {
-      margin-bottom: 16px;
       color: var(--accent);
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
 
     /* Job Card */
@@ -527,10 +524,139 @@
       animation: slideIn 0.3s ease;
     }
 
+    /* File Viewer Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.75);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal-box {
+      background: #111827;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: var(--radius);
+      width: 100%;
+      max-width: 1100px;
+      max-height: 88vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 25px 60px rgba(0,0,0,0.6);
+    }
+    .modal-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 20px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      flex-shrink: 0;
+    }
+    .modal-title { font-weight: 700; font-size: 15px; flex: 1; }
+    .modal-meta { font-size: 12px; color: var(--text-dim); }
+    .modal-close {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      color: #fff;
+      border-radius: 6px;
+      width: 32px; height: 32px;
+      cursor: pointer;
+      font-size: 16px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .modal-close:hover { background: rgba(239,68,68,0.2); border-color: #ef4444; }
+    .modal-body {
+      flex: 1;
+      overflow: auto;
+      padding: 0;
+    }
+    .modal-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    .modal-table th {
+      position: sticky;
+      top: 0;
+      background: #1e293b;
+      padding: 10px 12px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--accent);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      white-space: nowrap;
+      z-index: 1;
+    }
+    .modal-table td {
+      padding: 8px 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.03);
+      vertical-align: top;
+      max-width: 280px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .modal-table td:hover { white-space: normal; max-width: none; background: rgba(99,102,241,0.05); }
+    .modal-table tr:hover td { background: rgba(255,255,255,0.02); }
+    .modal-text {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      line-height: 1.7;
+      color: #94a3b8;
+      padding: 20px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .modal-loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 200px;
+      color: var(--text-dim);
+      gap: 12px;
+    }
+    .modal-empty {
+      padding: 40px;
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 13px;
+    }
+
     @keyframes slideIn {
       from { transform: translateX(100%); opacity: 0; }
       to { transform: translateX(0); opacity: 1; }
     }
+
+    .debug-step {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      margin-bottom: 10px;
+      overflow: hidden;
+    }
+    .debug-step-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      background: rgba(255,255,255,0.03);
+      border-bottom: 1px solid var(--border);
+    }
+    .debug-step-badge {
+      background: var(--primary);
+      color: #fff;
+      border-radius: 20px;
+      padding: 2px 10px;
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .debug-step-name { font-weight: 600; font-size: 13px; flex: 1; }
+    .debug-step-meta { font-size: 12px; color: var(--text-dim); }
+    .debug-step-actions { display: flex; gap: 6px; }
   </style>
 </head>
 <body>
@@ -562,6 +688,9 @@
       </button>
       <button class="tab-btn" onclick="switchTab('tab-files')">
         <span>📁</span> File kết quả Excel <span class="badge-count" id="filesBadge">0</span>
+      </button>
+      <button class="tab-btn" onclick="switchTab('tab-debug')" id="debugTabBtn">
+        <span>🔬</span> Debug Files
       </button>
     </div>
 
@@ -606,33 +735,36 @@
             <div class="helper-text">Nếu nhập danh sách này, hệ thống sẽ ưu tiên cào theo các từ khoá của bạn.</div>
           </div>
 
-          <details class="advanced-box">
-            <summary>⚙️ Cấu hình nâng cao (Độ sâu, luồng cào, thị trường)</summary>
-            <div class="form-row" style="margin-top: 14px;">
+          <div class="advanced-box">
+            <div class="advanced-box-title">⚙️ Cấu hình nâng cao (Độ sâu, luồng cào, thị trường)</div>
+            <div class="form-row">
               <div class="form-group">
                 <label for="depthInput">Độ sâu cuộn trang (Depth):</label>
                 <select id="depthInput" class="form-control">
-                  <option value="2">2 (~1-3 phút, Test nhanh)</option>
-                  <option value="5" selected>5 (Tiêu chuẩn, ~10 phút)</option>
-                  <option value="10">10 (Quét sâu toàn diện, ~25 phút)</option>
+                  <option value="1" selected>1 (Siêu nhanh, ~30 giây, chỉ ~10 kết quả)</option>
+                  <option value="2">2 (Nhanh, ~1-2 phút)</option>
+                  <option value="5">5 (Tiêu chuẩn, ~5-10 phút)</option>
+                  <option value="10">10 (Quét sâu toàn diện)</option>
                 </select>
               </div>
 
               <div class="form-group">
-                <label for="concurrencyInput">Số luồng song song (Concurrency):</label>
+                <label for="concurrencyInput">Số trình duyệt Playwright (Concurrency):</label>
                 <select id="concurrencyInput" class="form-control">
-                  <option value="2">2 luồng (Máy yếu / Tiết kiệm RAM)</option>
-                  <option value="4" selected>4 luồng (Khuyên dùng)</option>
-                  <option value="6">6 luồng (Máy mạnh)</option>
+                  <option value="1" selected>1 trình duyệt (Mặc định - An toàn / Tiết kiệm RAM)</option>
+                  <option value="2">2 trình duyệt (Máy trung bình)</option>
+                  <option value="4">4 trình duyệt (Máy mạnh)</option>
+                  <option value="6">6 trình duyệt (Máy rất mạnh)</option>
                 </select>
               </div>
 
               <div class="form-group">
                 <label for="maxSitesInput">Giới hạn website thẩm định:</label>
                 <select id="maxSitesInput" class="form-control">
-                  <option value="0" selected>0 (Thẩm định toàn bộ)</option>
+                  <option value="3" selected>3 website đầu tiên (Test siêu nhanh)</option>
                   <option value="5">5 website đầu tiên (Test nhanh)</option>
                   <option value="15">15 website đầu tiên</option>
+                  <option value="0">0 (Thẩm định toàn bộ)</option>
                 </select>
               </div>
 
@@ -644,8 +776,16 @@
                   <option value="ota_first">OTA-First (Bắt buộc có Online Search)</option>
                 </select>
               </div>
+
+              <div class="form-group">
+                <label for="headlessInput">Cửa sổ trình duyệt Chromium:</label>
+                <select id="headlessInput" class="form-control">
+                  <option value="true" selected>🙈 Chạy ngầm (Bật Headless - Tiết kiệm tài nguyên)</option>
+                  <option value="false">👁️ Hiển thị cửa sổ thật (Tắt Headless - Xem trực tiếp)</option>
+                </select>
+              </div>
             </div>
-          </details>
+          </div>
 
           <button type="submit" class="btn btn-primary" id="submitBtn" style="width: 100%; padding: 16px;">
             <span>🚀</span> BẮT ĐẦU QUÉT LEADS VÀ THẨM ĐỊNH
@@ -704,6 +844,47 @@
         </div>
       </div>
     </div>
+
+    <!-- TAB 4: DEBUG FILES -->
+    <div id="tab-debug" class="tab-pane">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span>🔬</span> File Trung Gian Từng Bước (Debug)
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <select id="debugJobSelect" class="form-control" style="min-width:220px;padding:6px 10px;font-size:13px;" onchange="loadDebugFiles()">
+              <option value="">-- Chọn job để xem --</option>
+            </select>
+            <button class="btn btn-secondary btn-sm" onclick="loadDebugFiles()">🔄 Làm mới</button>
+          </div>
+        </div>
+
+        <div id="debugFilesContainer">
+          <div class="empty-state">
+            <div class="empty-state-icon">🔬</div>
+            <p>Chọn một job ở trên để xem các file intermediate của từng bước pipeline.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+  <!-- File Viewer Modal -->
+  <div class="modal-overlay" id="fileViewerModal" onclick="closeFileViewer(event)">
+    <div class="modal-box">
+      <div class="modal-header">
+        <span id="modalFileIcon" style="font-size:20px">📄</span>
+        <div class="modal-title" id="modalFileName">–</div>
+        <div class="modal-meta" id="modalFileMeta"></div>
+        <button class="modal-close" onclick="closeFileViewerDirect()">✕</button>
+      </div>
+      <div class="modal-body" id="modalBody">
+        <div class="modal-loading">⏳ Đang tải nội dung file...</div>
+      </div>
+    </div>
+  </div>
+
   </main>
 
   <div class="toast-container" id="toastContainer"></div>
@@ -720,13 +901,15 @@
       const btnMap = {
         'tab-search': 0,
         'tab-jobs': 1,
-        'tab-files': 2
+        'tab-files': 2,
+        'tab-debug': 3
       };
       const btns = document.querySelectorAll('.tab-btn');
-      if (btns[btnMap[tabId]]) btns[btnMap[tabId]].classList.add('active');
+      if (btns[btnMap[tabId]] !== undefined) btns[btnMap[tabId]].classList.add('active');
 
       if (tabId === 'tab-files') fetchFiles();
       if (tabId === 'tab-jobs') fetchJobs();
+      if (tabId === 'tab-debug') { fetchJobs().then(() => populateDebugJobSelect()); }
     }
 
     function onCountryChange() {
@@ -761,6 +944,7 @@
       const concurrency = parseInt(document.getElementById('concurrencyInput').value);
       const max_sites = parseInt(document.getElementById('maxSitesInput').value);
       const market_type = document.getElementById('marketType').value;
+      const headless = document.getElementById('headlessInput') ? document.getElementById('headlessInput').value === 'true' : false;
 
       const payload = {
         country,
@@ -769,7 +953,8 @@
         depth,
         concurrency,
         max_sites,
-        market_type
+        market_type,
+        headless
       };
 
       try {
@@ -802,6 +987,7 @@
         const res = await fetch('/api/jobs');
         const data = await res.json();
         const jobs = data.jobs || [];
+        window._jobsCache = jobs; // cache cho debug tab
 
         let runningCount = 0;
         jobs.forEach(j => { if (j.status === 'running' || j.status === 'pending') runningCount++; });
@@ -848,10 +1034,11 @@
       }).join('');
 
       let downloadBtn = "";
-      if (isCompleted && job.result && job.result.excel_filename) {
+      if (isCompleted && job.result) {
+        const leadCount = job.result.qualified_count != null ? job.result.qualified_count : 0;
         downloadBtn = `
-          <a href="/api/files/${job.result.excel_filename}/download" class="btn btn-primary btn-sm">
-            <span>📥</span> Tải File Excel (${job.result.qualified_count} Leads)
+          <a href="/api/jobs/${job.id}/excel" class="btn btn-primary btn-sm">
+            <span>📥</span> Tải File Excel (${leadCount} Leads)
           </a>
         `;
       }
@@ -903,7 +1090,7 @@
               <td colspan="4">
                 <div class="empty-state">
                   <div class="empty-state-icon">📄</div>
-                  <p>Chưa có file Excel nào được tạo trong thư mục output.</p>
+                  <p>Chưa có file kết quả nào trong thư mục output.</p>
                 </div>
               </td>
             </tr>
@@ -915,17 +1102,23 @@
           <tr>
             <td>
               <div class="file-name">
-                <span class="file-icon">📊</span>
+                <span class="file-icon">${f.is_json ? '📋' : '📊'}</span>
                 <span>${f.filename}</span>
+                ${f.is_json ? '<span style="font-size:10px; background:rgba(99,102,241,0.2); color:#a5b4fc; padding:2px 6px; border-radius:4px; margin-left:6px;">JSON Leads Object</span>' : ''}
               </div>
             </td>
             <td style="color: var(--text-sub); font-size: 12px;">${f.modified_at}</td>
             <td style="color: var(--text-sub); font-size: 12px;">${f.size_human}</td>
             <td style="text-align: right;">
-              <a href="${f.download_url}" class="btn btn-primary btn-sm" style="margin-right: 8px;">
-                <span>📥</span> Tải về
+              <a href="${f.download_url}" class="btn btn-primary btn-sm" style="margin-right: 8px;" title="Chuyển đổi on-the-fly và tải về định dạng Excel">
+                <span>📥</span> Tải Excel (.xlsx)
               </a>
-              <button class="btn btn-danger btn-sm" onclick="deleteFile('${f.filename}')">
+              ${f.raw_url ? `
+                <a href="${f.raw_url}" target="_blank" class="btn btn-secondary btn-sm" style="margin-right: 8px;" title="Xem hoặc tải JSON thô">
+                  <span>📄</span> JSON
+                </a>
+              ` : ''}
+              <button class="btn btn-danger btn-sm" onclick="deleteFile('${f.filename}')" title="Xoá">
                 <span>🗑️</span>
               </button>
             </td>
@@ -968,6 +1161,144 @@
       fetchFiles();
       startPolling();
     };
+
+
+  // ======= FILE VIEWER MODAL =======
+  async function viewDebugFile(jobId, filename, stepName, fileType) {
+    const modal = document.getElementById('fileViewerModal');
+    const body = document.getElementById('modalBody');
+    const title = document.getElementById('modalFileName');
+    const meta = document.getElementById('modalFileMeta');
+    const icon = document.getElementById('modalFileIcon');
+    const icons = {csv:'🗂️', json:'📋', text:'📝'};
+    icon.textContent = icons[fileType] || '📄';
+    title.textContent = filename;
+    meta.textContent = stepName;
+    body.innerHTML = '<div class="modal-loading"><span style="font-size:24px">⏳</span> Đang tải nội dung...</div>';
+    modal.classList.add('open');
+    document.body.style.overflow = 'hidden';
+
+    try {
+      const res = await fetch(`/api/jobs/${jobId}/debug/view/${encodeURIComponent(filename)}`);
+      if (!res.ok) {
+        const err = await res.json();
+        body.innerHTML = `<div class="modal-empty">❌ ${err.detail || 'Lỗi khi đọc file'}</div>`;
+        return;
+      }
+      const data = await res.json();
+
+      if (data.type === 'csv') {
+        if (!data.headers || data.headers.length === 0) {
+          body.innerHTML = '<div class="modal-empty">📭 File CSV rỗng (0 cột)</div>';
+          return;
+        }
+        if (!data.rows || data.rows.length === 0) {
+          body.innerHTML = `<div class="modal-empty">📭 File CSV có header nhưng không có dữ liệu (0 dòng)</div>`;
+          return;
+        }
+        meta.textContent = `${stepName} · ${data.rows.length} dòng · ${data.headers.length} cột`;
+        const ths = data.headers.map(h => `<th title="${h}">${h}</th>`).join('');
+        const trs = data.rows.map(row =>
+          '<tr>' + data.headers.map(h => `<td title="${String(row[h]||'').slice(0,300)}">${String(row[h]||'')}</td>`).join('') + '</tr>'
+        ).join('');
+        body.innerHTML = `<table class="modal-table"><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>`;
+
+      } else if (data.type === 'json') {
+        const pretty = JSON.stringify(data.data, null, 2);
+        body.innerHTML = `<div class="modal-text">${escHtml(pretty)}</div>`;
+
+      } else {
+        body.innerHTML = `<div class="modal-text">${escHtml(data.content || '(rỗng)')}</div>`;
+      }
+    } catch(e) {
+      body.innerHTML = `<div class="modal-empty">❌ Lỗi: ${e.message}</div>`;
+    }
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function closeFileViewer(e) {
+    if (e.target === document.getElementById('fileViewerModal')) closeFileViewerDirect();
+  }
+  function closeFileViewerDirect() {
+    document.getElementById('fileViewerModal').classList.remove('open');
+    document.body.style.overflow = '';
+  }
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeFileViewerDirect(); });
+
+  // ======= DEBUG TAB =======
+  function populateDebugJobSelect() {
+    const sel = document.getElementById('debugJobSelect');
+    const currentVal = sel.value;
+    sel.innerHTML = '<option value="">-- Chọn job để xem --</option>';
+    const jobs = window._jobsCache || [];
+    jobs.forEach(j => {
+      const opt = document.createElement('option');
+      opt.value = j.id;
+      const country = j.country || 'custom';
+      const status = j.status === 'completed' ? '✅' : j.status === 'failed' ? '❌' : '⏳';
+      opt.textContent = `${status} ${j.id.slice(0,16)}... (${country}) ${j.created_at || ''}`;
+      if (j.id === currentVal) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  }
+
+  async function loadDebugFiles() {
+    const jobId = document.getElementById('debugJobSelect').value;
+    const container = document.getElementById('debugFilesContainer');
+    if (!jobId) {
+      container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🔬</div><p>Chọn một job để xem file debug.</p></div>';
+      return;
+    }
+    container.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-dim);">⏳ Đang tải...</div>';
+    try {
+      const r = await fetch(`/api/jobs/${jobId}/debug`);
+      const data = await r.json();
+      if (!data.files || data.files.length === 0) {
+        container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📂</div><p>Chưa có file intermediate nào. Job có thể chưa hoàn tất bước nào.<br><small style="color:var(--text-dim)">${data.work_dir || ''}</small></p></div>`;
+        return;
+      }
+      let html = `<div style="padding:12px 16px 4px;font-size:12px;color:var(--text-dim);">📁 Work dir: <code style="color:var(--accent)">${data.work_dir}</code></div>`;
+      const stepColors = {1:'#6366f1',2:'#38bdf8',3:'#10b981',4:'#f59e0b',5:'#ef4444'};
+      const stepIcons = {1:'📝',2:'🗂️',3:'🔍',4:'🌐',5:'📊'};
+      data.files.forEach(f => {
+        const color = stepColors[f.step] || '#94a3b8';
+        const icon = stepIcons[f.step] || '📄';
+        const rows = f.rows != null ? `<span class="debug-step-meta">${f.rows} dòng</span>` : '';
+        html += `
+          <div class="debug-step">
+            <div class="debug-step-header">
+              <span class="debug-step-badge" style="background:${color}">Bước ${f.step}</span>
+              <span style="font-size:18px">${icon}</span>
+              <div class="debug-step-name">${f.step_name}</div>
+              ${rows}
+              <span class="debug-step-meta">${f.size_human}</span>
+              <div class="debug-step-actions">
+                <button class="btn btn-secondary btn-sm" onclick="viewDebugFile(jobId, '${f.filename}', '${f.step_name}', '${f.type||'text'}')">
+                  👁️ Xem
+                </button>
+                <a href="${f.download_url}" download class="btn btn-secondary btn-sm" style="text-decoration:none">
+                  📥 Tải về
+                </a>
+              </div>
+            </div>
+          </div>`;
+      });
+      container.innerHTML = html;
+    } catch(e) {
+      container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">❌</div><p>Lỗi: ${e.message}</p></div>`;
+    }
+  }
+
+  // Ghi đè fetchJobs để cũng cập nhật debug select
+  const _origFetchJobs = fetchJobs;
+  fetchJobs = async function() {
+    await _origFetchJobs();
+    populateDebugJobSelect();
+  };
+
   </script>
 </body>
 </html>

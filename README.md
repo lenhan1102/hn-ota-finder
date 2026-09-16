@@ -14,7 +14,19 @@ Hệ thống tự động hóa trọn gói quy trình tìm kiếm, sàng lọc v
 ### 1. Yêu cầu môi trường:
 * **Python 3.10 trở lên**.
 
-### 2. Cài đặt thư viện:
+### 2. Tạo và kích hoạt môi trường ảo (venv):
+```bash
+# Tạo venv
+python3 -m venv .venv
+
+# Kích hoạt (macOS / Linux)
+source .venv/bin/activate
+
+# Kích hoạt (Windows)
+.venv\Scripts\activate
+```
+
+### 3. Cài đặt thư viện:
 ```bash
 pip install -r requirements.txt
 playwright install chromium
@@ -35,8 +47,14 @@ Tải file binary `google-maps-scraper` tương ứng với hệ điều hành c
 
 ### Cách 1: Chạy bằng lệnh Python
 ```bash
-python run.py
+# Kích hoạt venv trước (nếu chưa kích hoạt)
+source .venv/bin/activate   # macOS / Linux
+# .venv\Scripts\activate    # Windows
+
+python3 run.py
 ```
+
+> ⚠️ **Lưu ý**: Trên macOS, lệnh `python` không tồn tại — phải dùng `python3`.
 
 ### Cách 2: Nhấp đúp chuột file khởi động
 * **macOS / Linux**: Chạy file `./start.sh`
@@ -51,7 +69,7 @@ Sau khi khởi động, mở trình duyệt truy cập vào:
 
 1. **Tab "🔍 Tìm kiếm mới"**:
    * Chọn quốc gia có sẵn hoặc nhập danh sách từ khoá tuỳ ý (mỗi dòng 1 từ khoá).
-   * Cấu hình Độ sâu (Depth: 2, 5, 10), Số luồng cào (Concurrency: 2, 4, 6), Chuẩn thị trường (Consolidator vs OTA-First).
+   * Cấu hình Độ sâu (Depth: 1, 2, 5, 10), Số trình duyệt cào song song (Concurrency: 1, 2, 4 - mặc định: 1 trình duyệt an toàn), Chuẩn thị trường (Consolidator vs OTA-First).
    * Bấm nút: **[ 🚀 BẮT ĐẦU QUÉT LEADS VÀ THẨM ĐỊNH ]**.
 
 2. **Tab "⚡ Tiến độ đang chạy"**:
@@ -71,5 +89,8 @@ Sau khi khởi động, mở trình duyệt truy cập vào:
 
 Nếu muốn chạy trực tiếp bằng dòng lệnh không qua giao diện web:
 ```bash
-python src/orchestrator.py --country vietnam --lang vi --depth 5
+# Kích hoạt venv trước
+source .venv/bin/activate   # macOS / Linux
+
+python3 src/orchestrator.py --country vietnam --lang vi --depth 5
 ```

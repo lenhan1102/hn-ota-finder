@@ -27,7 +27,7 @@ Quy tac Tier (ban Hong Kong — cong qualify la "co ban ve may bay"):
 Doi sang chuan Indonesia/Philippines (thi truong OTA-first): dat
 REQUIRE_ONLINE_SEARCH = True ben duoi — khi do khong co online search se bi DROP.
 """
-import argparse, csv, json, pathlib, sys
+import argparse, csv, io, json, pathlib, sys
 from urllib.parse import urlparse
 
 try:
@@ -120,31 +120,50 @@ def norm_domain(u):
     return host[4:] if host.startswith("www.") else host
 
 
-def load_verdicts(path):
-    with open(path, newline="", encoding="utf-8") as f:
-        rows = list(csv.DictReader(f))
+def load_verdicts(verdicts_input):
+    if isinstance(verdicts_input, pd.DataFrame):
+        rows = verdicts_input.to_dict(orient="records")
+    elif isinstance(verdicts_input, list):
+        rows = verdicts_input
+    else:
+        path = str(verdicts_input)
+        if path.endswith(".json"):
+            with open(path, encoding="utf-8") as f:
+                rows = json.load(f)
+        else:
+            with open(path, newline="", encoding="utf-8") as f:
+                rows = list(csv.DictReader(f))
     recs = []
     for r in rows:
         recs.append({
-            "domain": norm_domain(r["domain"]) or r["domain"].strip().lower(),
-            "real": int(r["real"]), "ota": int(r["ota"]), "airline": int(r["airline"]),
-            "flightticketing": int(r["flightticketing"]), "onlinesearch": int(r["onlinesearch"]),
-            "iata": int(r["iata"]), "iata_ev": r.get("iata_ev", ""),
-            "puretour": int(r["puretour"]), "conf": float(r["conf"]),
+            "domain": norm_domain(r.get("domain", "")) or str(r.get("domain", "")).strip().lower(),
+            "real": int(r.get("real", 0)),
+            "ota": int(r.get("ota", 0)),
+            "airline": int(r.get("airline", 0)),
+            "flightticketing": int(r.get("flightticketing", 0)),
+            "onlinesearch": int(r.get("onlinesearch", 0)),
+            "iata": int(r.get("iata", 0)),
+            "iata_ev": r.get("iata_ev", ""),
+            "puretour": int(r.get("puretour", 0)),
+            "conf": float(r.get("conf", 0.0)),
             "evidence": r.get("evidence", ""),
-            # cot tuy chon: 0 neu AI deep-dive khong tai duoc site (403/TLS/JS trong/down).
-            # Mac dinh 1. Ket qua reverify_browser.py se ghi de gia tri nay.
-            "reachable": int(r.get("reachable") or 1),
+            "reachable": int(r.get("reachable", 1) if r.get("reachable") is not None else 1),
         })
     return pd.DataFrame(recs, columns=COLS)
 
 
-def apply_reverify(vdf, reverify_path):
-    """Ghi de ket qua WebFetch bang ket qua trinh duyet that."""
+def apply_reverify(vdf, reverify_input):
+    """Ghi de ket qua WebFetch bang ket qua trinh duyet that (tu list dict hoac file)."""
     rv = {}
-    if reverify_path:
-        for x in json.load(open(reverify_path)):
-            rv[norm_domain(x["url"])] = x
+    if reverify_input is not None:
+        if isinstance(reverify_input, list):
+            items = reverify_input
+        else:
+            p = pathlib.Path(reverify_input)
+            items = json.load(open(p, encoding="utf-8")) if p.exists() else []
+        for x in items:
+            u = x.get("url") or x.get("domain") or ""
+            rv[norm_domain(u)] = x
 
     def one(r):
         reach, dead = bool(r.reachable), False
@@ -173,35 +192,93 @@ def apply_reverify(vdf, reverify_path):
 CONTACT_COLS = ["title", "city", "phone", "emails", "review_count"]
 
 
-def join_contacts(vdf, contacts_path):
-    """Ghep name/city/phone/emails/review_count tu bang danh ba (neu co).
-
-    Bang danh ba la .xlsx hoac .csv, can toi thieu mot cot website
-    ('website_clean' hoac 'website') de match theo domain.
-    """
+def join_contacts(vdf, contacts_input):
+    """Ghep name/city/phone/emails/review_count tu danh ba (list dict, df hoac file)."""
     for c in CONTACT_COLS:
         vdf[c] = None
-    if not contacts_path:
-        print("  (bo qua ghep lien he: khong truyen --contacts)")
+    if contacts_input is None:
         return vdf
-    if not pathlib.Path(contacts_path).exists():
-        print(f"  (bo qua ghep lien he: khong thay file {contacts_path})")
+
+    if isinstance(contacts_input, pd.DataFrame):
+        tpl = contacts_input.copy()
+    elif isinstance(contacts_input, list):
+        tpl = pd.DataFrame(contacts_input)
+    else:
+        p = pathlib.Path(contacts_input)
+        if not p.exists():
+            return vdf
+        if str(p).lower().endswith(".json"):
+            tpl = pd.DataFrame(json.load(open(p, encoding="utf-8")))
+        elif str(p).lower().endswith(".csv"):
+            tpl = pd.read_csv(p)
+        else:
+            tpl = pd.read_excel(p)
+
+    col = "website_clean" if "website_clean" in tpl.columns else ("website" if "website" in tpl.columns else ("domain" if "domain" in tpl.columns else None))
+    if not col:
         return vdf
-    tpl = (pd.read_csv(contacts_path) if str(contacts_path).lower().endswith(".csv")
-           else pd.read_excel(contacts_path))
-    col = "website_clean" if "website_clean" in tpl.columns else "website"
-    if col not in tpl.columns:
-        print(f"  (bo qua ghep lien he: {contacts_path} khong co cot website/website_clean)")
-        return vdf
+
     for c in CONTACT_COLS:
         if c not in tpl.columns:
             tpl[c] = None
     tpl["_dom"] = tpl[col].fillna("").apply(norm_domain)
     tpl["_rc"] = pd.to_numeric(tpl.get("review_count"), errors="coerce").fillna(0)
-    # mot domain nhieu dong GMaps -> giu dong co nhieu review nhat
     info = (tpl.sort_values("_rc", ascending=False).drop_duplicates("_dom")
             .set_index("_dom")[CONTACT_COLS])
     return vdf.drop(columns=CONTACT_COLS).join(info, on="domain")
+
+
+def build_leads_workbook(qual_df: pd.DataFrame, drop_df: pd.DataFrame) -> Workbook:
+    """Tao Workbook openpyxl chua 2 sheet Qualified va Dropped."""
+    wb = Workbook()
+    wb.remove(wb.active)
+    hf = PatternFill("solid", fgColor="1F4E78")
+    hfont = Font(color="FFFFFF", bold=True)
+    linkfont = Font(color="0563C1", underline="single")
+    W = {"name": 32, "website": 30, "evidence": 74, "iata_ev": 34, "reason": 46,
+         "emails": 22, "phone": 15, "city": 14, "gmaps_name": 30}
+
+    def sheet(name, df):
+        ws = wb.create_sheet(name)
+        ws.append(list(df.columns))
+        for c in ws[1]:
+            c.fill, c.font = hf, hfont
+        wi = list(df.columns).index("website") + 1 if "website" in df.columns else None
+        for _, row in df.iterrows():
+            formatted_row = []
+            for v in row:
+                if isinstance(v, list):
+                    formatted_row.append(", ".join(str(x) for x in v))
+                elif isinstance(v, dict):
+                    formatted_row.append(json.dumps(v, ensure_ascii=False))
+                elif pd.isna(v):
+                    formatted_row.append("")
+                else:
+                    formatted_row.append(v)
+            ws.append(formatted_row)
+        for r in ws.iter_rows(min_row=2):
+            if wi and r[wi - 1].value:
+                r[wi - 1].hyperlink = str(r[wi - 1].value)
+                r[wi - 1].font = linkfont
+        for i, cn in enumerate(df.columns, 1):
+            ws.column_dimensions[get_column_letter(i)].width = W.get(cn, 12)
+        ws.freeze_panes = "A2"
+        ws.auto_filter.ref = ws.dimensions
+
+    sheet("Qualified leads", qual_df)
+    sheet("Dropped", drop_df)
+    return wb
+
+
+def export_leads_to_excel_buffer(leads_data: dict) -> io.BytesIO:
+    """Chuyen doi object leads_data (dict) sang file Excel luu truc tiep trong RAM (BytesIO)."""
+    qual_df = pd.DataFrame(leads_data.get("qualified_leads", []))
+    drop_df = pd.DataFrame(leads_data.get("dropped_leads", []))
+    wb = build_leads_workbook(qual_df, drop_df)
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
 
 
 def write_xlsx(out, path):
@@ -216,62 +293,71 @@ def write_xlsx(out, path):
     dcols = ["reason", "name", "website", "conf", "gmaps_name", "evidence"]
     qual, drop = out[out.tier != "DROP"][qcols], out[out.tier == "DROP"][dcols]
 
-    wb = Workbook(); wb.remove(wb.active)
-    hf = PatternFill("solid", fgColor="1F4E78")
-    hfont = Font(color="FFFFFF", bold=True)
-    linkfont = Font(color="0563C1", underline="single")
-    W = {"name": 32, "website": 30, "evidence": 74, "iata_ev": 34, "reason": 46,
-         "emails": 22, "phone": 15, "city": 14, "gmaps_name": 30}
-
-    def sheet(name, df):
-        ws = wb.create_sheet(name)
-        ws.append(list(df.columns))
-        for c in ws[1]:
-            c.fill, c.font = hf, hfont
-        wi = list(df.columns).index("website") + 1 if "website" in df.columns else None
-        for _, row in df.iterrows():
-            ws.append(["" if pd.isna(v) else v for v in row])
-        for r in ws.iter_rows(min_row=2):
-            if wi and r[wi - 1].value:
-                r[wi - 1].hyperlink = r[wi - 1].value
-                r[wi - 1].font = linkfont
-        for i, cn in enumerate(df.columns, 1):
-            ws.column_dimensions[get_column_letter(i)].width = W.get(cn, 12)
-        ws.freeze_panes = "A2"
-        ws.auto_filter.ref = ws.dimensions
-
-    sheet("Qualified leads", qual)
-    sheet("Dropped", drop)
+    wb = build_leads_workbook(qual, drop)
     wb.save(path)
     return qual, drop, out
 
 
-
-def run_tiering(verdicts_csv, country, output_xlsx, reverify_json=None, contacts_csv=None, require_online_search=False):
+def run_tiering(verdicts_data, country, output_json=None, output_xlsx=None, reverify_data=None, contacts_data=None, require_online_search=False):
     global REQUIRE_ONLINE_SEARCH
     REQUIRE_ONLINE_SEARCH = require_online_search
 
-    vdf = load_verdicts(verdicts_csv)
-    print(f"Doc {len(vdf)} verdict tu {verdicts_csv}")
+    vdf = load_verdicts(verdicts_data)
+    print(f"Xu ly {len(vdf)} verdict cho quoc gia {country}...")
     if EXCLUDE_BIG:
         before = len(vdf)
         vdf = vdf[~vdf.domain.isin(EXCLUDE_BIG)].copy()
         print(f"  loai {before - len(vdf)} mega-OTA")
 
-    vdf = apply_reverify(vdf, reverify_json)
+    vdf = apply_reverify(vdf, reverify_data)
     vdf[["tier", "reason"]] = vdf.apply(lambda r: pd.Series(classify(r)), axis=1)
 
-    out = join_contacts(vdf, contacts_csv)
+    out = join_contacts(vdf, contacts_data)
     out["name"] = out.apply(
         lambda r: NAME_MAP.get(r.domain, r.title if pd.notna(r.title) else r.domain), axis=1)
     out["gmaps_name"] = out["title"]
     out["website"] = out["workurl"]
     out["site_reachable"] = out["reach"]
 
-    qual, drop, out = write_xlsx(out, output_xlsx)
-    print(f"\n{country}: QUALIFIED={len(qual)}  DROPPED={len(drop)}  "
-          f"| {out.tier.value_counts().to_dict()}")
-    return qual, drop, out
+    out["_r"] = out.tier.map({"Tier 1": 0, "Tier 2": 1, "Tier 3": 2, "DROP": 3})
+    out = out.sort_values(["_r", "site_reachable", "conf"], ascending=[True, False, False])
+    out = out.rename(columns={"onlinesearch": "online_flight_search",
+                              "flightticketing": "sells_air_tickets",
+                              "iata": "iata_visible"})
+    qcols = ["name", "website", "site_reachable", "https_ok", "reason", "sells_air_tickets",
+             "online_flight_search", "iata_visible", "iata_ev", "city", "phone", "emails",
+             "review_count", "conf", "gmaps_name", "evidence"]
+    dcols = ["reason", "name", "website", "conf", "gmaps_name", "evidence"]
+    qual = out[out.tier != "DROP"][qcols]
+    drop = out[out.tier == "DROP"][dcols]
+
+    from datetime import datetime
+    leads_data = {
+        "country": country,
+        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "summary": {
+            "qualified_count": len(qual),
+            "dropped_count": len(drop),
+            "total_leads": len(qual) + len(drop),
+        },
+        "qualified_leads": qual.to_dict(orient="records"),
+        "dropped_leads": drop.to_dict(orient="records"),
+    }
+
+    if output_json:
+        p_json = pathlib.Path(output_json)
+        p_json.parent.mkdir(parents=True, exist_ok=True)
+        with open(p_json, "w", encoding="utf-8") as f:
+            json.dump(leads_data, f, ensure_ascii=False, indent=2)
+        print(f"Da luu ket qua JSON tai {output_json}")
+
+    if output_xlsx:
+        wb = build_leads_workbook(qual, drop)
+        wb.save(output_xlsx)
+        print(f"Da luu Excel tai {output_xlsx}")
+
+    print(f"\n{country}: QUALIFIED={len(qual)}  DROPPED={len(drop)}  | {out.tier.value_counts().to_dict()}")
+    return qual, drop, leads_data
 
 def main():
     ap = argparse.ArgumentParser(description="Tier hoa NDC leads va xuat Excel")

@@ -151,6 +151,16 @@ OTA_PRIMARY_CATEGORIES = [
     "corporate office",
     "bus ticket agency",
     "vacation home rental agency",
+    # Tiếng Việt
+    "đại lý du lịch",
+    "đại lý vé máy bay",
+    "nhà điều hành du lịch",
+    "công ty du lịch",
+    "dịch vụ du lịch",
+    "phòng vé máy bay",
+    "phòng vé",
+    "đại lý lữ hành",
+    "công ty lữ hành",
 ]
 
 # Website domain keywords that STRONGLY suggest a booking platform
@@ -158,12 +168,15 @@ OTA_PRIMARY_CATEGORIES = [
 OTA_WEBSITE_KEYWORDS_STRONG = [
     "booking", "book", "ticket", "flight", "fare", "fly",
     "reserve", "checkout", "pay",
+    # Tiếng Việt không dấu trong domain
+    "vemaybay", "phongve", "bay", "datve", "banve", "hangkhong", "airticket",
 ]
 
 # Website domain keywords that are WEAK signals (travel brochure sites also use these)
 OTA_WEBSITE_KEYWORDS_WEAK = [
     "travel", "tour", "trip", "holiday",
     "voyage", "hotel", "resort", "vacation",
+    "dulich", "luhanh",
 ]
 
 # TLDs that suggest travel industry
@@ -173,6 +186,8 @@ OTA_TLDS = [".travel", ".tours", ".holiday", ".booking", ".flights"]
 OTA_TITLE_KEYWORDS = [
     "online", "booking", "e-travel", "digital", ".com", "platform",
     "app", "ota", "etravel", "e-ticket",
+    # Tiếng Việt
+    "trực tuyến", "đặt vé", "vé máy bay", "phòng vé", "vé giá rẻ",
 ]
 
 # Known OTA / booking platform domains — if a website uses one of these,
@@ -190,11 +205,13 @@ KNOWN_OTA_DOMAINS = [
     "airpaz.com", "orbitz.com", "priceline.com", "hopper.com",
     "gotogate.", "edreams.", "opodo.", "lastminute.",
     "bravofly.", "cheapoair.",
-    # Asia-focused
+    # Asia-focused & Vietnam OTAs
     "12go.asia", "12go.co", "baolau.com", "bookaway.com", "rome2rio.com",
     "busbud.com", "omio.com", "trainline.",
     "trip.com",  # will be matched against hostname to avoid "phukettrip.com"
     "ctrip.com", "qunar.com", "fliggy.com", "tongcheng.",
+    "vemaybay.vn", "abay.vn", "bestprice.vn", "gotadi.com", "dlink.vn",
+    "datve247.vn", "ve24h.vn", "atadi.vn", "alove.vn", "sanvemaybay.vn",
     # India
     "makemytrip.com", "goibibo.com", "yatra.com", "cleartrip.com", "ixigo.com",
     # Indonesia
@@ -216,6 +233,10 @@ OTA_REVIEW_KEYWORDS = [
     "booked through their site", "instant confirmation", "e-ticket",
     "search and book", "compare prices", "payment online", "pay online",
     "checkout", "booking confirmation", "reservation system",
+    # Tiếng Việt
+    "đặt online", "đặt qua mạng", "đặt trên web", "đặt vé online",
+    "đặt vé máy bay", "mua vé máy bay", "xuất vé", "vé điện tử",
+    "thanh toán online", "hệ thống đặt vé", "đặt qua website",
 ]
 
 # --- Segment B: Air Ticketing Identification ---
@@ -224,12 +245,20 @@ OTA_REVIEW_KEYWORDS = [
 FLIGHT_KEYWORDS_PRIMARY = [
     "flight", "airline", "air ticket", "airticket", "airfare",
     "ticketing", "aviation", "boarding pass", "air booking",
+    # Tiếng Việt
+    "vé máy bay", "ve may bay", "vé máy bay giá rẻ", "ve may bay gia re",
+    "phòng vé", "phong ve", "hàng không", "hang khong", "chuyến bay", "chuyen bay",
+    "đặt vé máy bay", "dat ve may bay", "bán vé máy bay", "ban ve may bay",
+    "đại lý vé", "dai ly ve", "săn vé", "san ve",
 ]
 
 FLIGHT_KEYWORDS_SECONDARY = [
     "domestic flight", "international flight", "flight booking",
     "plane ticket", "fly ", "airport transfer",
     "book flight", "booked flight", "air travel",
+    # Tiếng Việt
+    "vé quốc tế", "vé nội địa", "đặt vé", "đặt chuyến bay",
+    "chặng bay", "bay thẳng", "hãng bay", "vé đoàn",
 ]
 
 # FALSE POSITIVE flight keywords to EXCLUDE
@@ -252,6 +281,11 @@ FLIGHT_FALSE_POSITIVES = [
 FLIGHT_STRONG_CATEGORIES = [
     "airline ticket agency",
     "airline",
+    "đại lý vé máy bay",
+    "phòng vé máy bay",
+    "phòng vé",
+    "vé máy bay",
+    "bán vé máy bay",
 ]
 
 

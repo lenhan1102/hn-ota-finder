@@ -74,9 +74,9 @@ def stage1_exclude(df: pd.DataFrame, country: str) -> tuple[pd.DataFrame, pd.Dat
 
     # --- Rule 4: Zero-signal records ---
     # No website AND no email AND review_count < 2 AND no phone
-    no_website = df['website'].isna() | (df['website'].str.strip() == '')
-    no_email = df['emails'].isna() | (df['emails'].str.strip() == '')
-    no_phone = df['phone'].isna() | (df['phone'].str.strip() == '')
+    no_website = df['website'].isna() | (df['website'].fillna('').str.strip() == '')
+    no_email = df['emails'].isna() | (df['emails'].fillna('').str.strip() == '')
+    no_phone = df['phone'].isna() | (df['phone'].fillna('').str.strip() == '')
     low_reviews = df['review_count'].fillna(0) < 2
     zero_signal = no_website & no_email & low_reviews & no_phone
     new_zero = zero_signal & ~exclude_mask
@@ -391,6 +391,8 @@ def classify_air_ticketing(feat: pd.Series) -> tuple[str, list[str]]:
         return 'potential', reasons
     elif feat['category_lower'] == 'visa consulting service' and feat['flight_in_reviews']:
         return 'potential', reasons + ['Visa + flight combo']
+    elif feat['is_proper_domain'] and any(cat in feat['category_lower'] for cat in [c.lower() for c in config.OTA_PRIMARY_CATEGORIES]):
+        return 'potential', reasons + ['Đại lý/công ty du lịch có website riêng (giữ lại để Chromium kiểm tra form vé)']
     else:
         return 'none', reasons
 
@@ -495,39 +497,82 @@ def compute_score(feat: pd.Series) -> dict:
 # MAIN PIPELINE
 # ==============================================================================
 
-def run_pipeline(input_path: str, country: str, output_dir: str):
-    """Execute the full pipeline."""
+def run_pipeline(input_data, country: str, output_dir: str = None) -> list[dict]:
+    """Execute the full pipeline on in-memory data or file, returning candidates as list[dict]."""
 
     print(f"\n{'='*70}")
-    print(f"  OTA & Air Ticketing Identification Pipeline")
+    print(f"  OTA & Air Ticketing Identification Pipeline (In-Memory)")
     print(f"  Country: {country.upper()}")
-    print(f"  Input:   {input_path}")
-    print(f"  Output:  {output_dir}")
     print(f"{'='*70}\n")
 
     # --- Load data ---
     print("[1/5] Loading data...")
-    df = pd.read_csv(input_path)
-    print(f"       Loaded {len(df)} records.")
+    if isinstance(input_data, pd.DataFrame):
+        df = input_data.copy()
+    elif isinstance(input_data, list):
+        df = pd.DataFrame(input_data)
+    else:
+        in_str = str(input_data)
+        if in_str.endswith(".json"):
+            import json
+            try:
+                with open(in_str, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    df = pd.DataFrame(data)
+            except Exception:
+                # Thu doc JSON lines
+                with open(in_str, "r", encoding="utf-8") as f:
+                    lines = [json.loads(l) for l in f if l.strip()]
+                    df = pd.DataFrame(lines)
+        else:
+            df = pd.read_csv(in_str)
+
+    print(f"       Loaded {len(df)} records into memory.")
+
+    # Normalize common column names from scraper
+    col_map = {
+        'web': 'website',
+        'url': 'website',
+        'site': 'website',
+        'name': 'title',
+        'email': 'emails',
+    }
+    for old_col, new_col in col_map.items():
+        if old_col in df.columns and new_col not in df.columns:
+            df[new_col] = df[old_col]
+
+    # Ensure required columns exist
+    for req_col in ['website', 'title', 'category', 'review_count', 'phone', 'emails']:
+        if req_col not in df.columns:
+            df[req_col] = ''
 
     # --- Stage 1: Exclusion ---
     print("[2/5] Stage 1: Applying exclusion filters...")
     kept_df, excluded_df = stage1_exclude(df, country)
     print(f"       Excluded: {len(excluded_df)} records")
     print(f"       Remaining: {len(kept_df)} records")
+    if not excluded_df.empty:
+        print("       --- [DANH SÁCH RECORD BỊ LOẠI Ở STAGE 1] ---")
+        for e_idx, e_row in excluded_df.iterrows():
+            e_title = str(e_row.get('title', ''))[:35]
+            e_reason = str(e_row.get('exclusion_reason', ''))
+            print(f"       [-] Bị loại: {e_title:<35} | Lý do: {e_reason}")
 
     # --- Stage 2: Feature extraction ---
     print("[3/5] Stage 2: Extracting features...")
     features_df = extract_features(kept_df, country)
 
     # --- Stage 2: Classification ---
-    print("[4/5] Stage 2: Classifying candidates...")
+    print(f"[4/5] Stage 2: Classifying {len(features_df)} candidates...")
     ota_results = []
     air_results = []
 
     for feat_idx, feat in features_df.iterrows():
         orig_idx = feat['original_index']
         orig_row = kept_df.loc[orig_idx]
+        title_str = str(orig_row.get('title', ''))
+        cat_str = str(orig_row.get('category', ''))
+        web_str = str(orig_row.get('website', ''))
 
         # OTA classification
         ota_class, ota_reasons = classify_ota(feat)
@@ -537,6 +582,14 @@ def run_pipeline(input_path: str, country: str, output_dir: str):
 
         # Scoring
         scores = compute_score(feat)
+
+        # Log chi tiết cho từng record
+        is_kept = (ota_class != 'none') or (air_class != 'none')
+        if is_kept:
+            reasons_str = "; ".join(ota_reasons + air_reasons)
+            print(f"       [+] GIỮ LẠI: {title_str[:30]:<30} | OTA={ota_class}, Air={air_class} | Lý do: {reasons_str[:60]}")
+        else:
+            print(f"       [-] LOẠI BỎ (HEURISTIC NONE): {title_str[:30]:<30} | Cat: {cat_str[:20]} | Web: {web_str[:25]} | Lý do: Không có tín hiệu vé máy bay/booking")
 
         base_info = {
             'title': orig_row.get('title', ''),
@@ -618,94 +671,51 @@ def run_pipeline(input_path: str, country: str, output_dir: str):
 
     combined_df = pd.DataFrame(combined_entries).sort_values('score_total', ascending=False) if combined_entries else pd.DataFrame()
 
-    # --- Stage 3: Save outputs ---
-    print("[5/5] Saving results...")
-    os.makedirs(output_dir, exist_ok=True)
+    # --- Stage 3: Save outputs (Optional) ---
+    if output_dir:
+        import json
+        print(f"[5/5] Saving results to {output_dir}...")
+        os.makedirs(output_dir, exist_ok=True)
 
-    ota_path = os.path.join(output_dir, 'ota_candidates.csv')
-    air_path = os.path.join(output_dir, 'air_ticketing_candidates.csv')
-    combined_path = os.path.join(output_dir, 'combined_candidates.csv')
-    excluded_path = os.path.join(output_dir, 'excluded_records.csv')
-    summary_path = os.path.join(output_dir, 'pipeline_summary.txt')
+        ota_path = os.path.join(output_dir, 'ota_candidates.json')
+        air_path = os.path.join(output_dir, 'air_ticketing_candidates.json')
+        combined_path = os.path.join(output_dir, 'combined_candidates.json')
+        excluded_path = os.path.join(output_dir, 'excluded_records.json')
+        summary_path = os.path.join(output_dir, 'pipeline_summary.txt')
 
-    if not ota_df.empty:
-        ota_df.to_csv(ota_path, index=False, quoting=csv.QUOTE_ALL)
-    if not air_df.empty:
-        air_df.to_csv(air_path, index=False, quoting=csv.QUOTE_ALL)
-    if not combined_df.empty:
-        combined_df.to_csv(combined_path, index=False, quoting=csv.QUOTE_ALL)
+        with open(ota_path, 'w', encoding='utf-8') as f:
+            json.dump(ota_results, f, ensure_ascii=False, indent=2)
+        with open(air_path, 'w', encoding='utf-8') as f:
+            json.dump(air_results, f, ensure_ascii=False, indent=2)
+        with open(combined_path, 'w', encoding='utf-8') as f:
+            json.dump(combined_entries, f, ensure_ascii=False, indent=2)
 
-    # Save excluded with just key columns + reason
-    if not excluded_df.empty:
-        excl_cols = ['title', 'category', 'website', 'review_count', 'review_rating', 'exclusion_reason']
-        excl_save = excluded_df[[c for c in excl_cols if c in excluded_df.columns]]
-        excl_save.to_csv(excluded_path, index=False, quoting=csv.QUOTE_ALL)
+        if not excluded_df.empty:
+            excl_cols = ['title', 'category', 'website', 'review_count', 'review_rating', 'exclusion_reason']
+            excl_records = excluded_df[[c for c in excl_cols if c in excluded_df.columns]].to_dict(orient='records')
+            with open(excluded_path, 'w', encoding='utf-8') as f:
+                json.dump(excl_records, f, ensure_ascii=False, indent=2)
 
-    # --- Summary ---
-    ota_strong = len(ota_df[ota_df['ota_classification'] == 'strong']) if not ota_df.empty else 0
-    ota_moderate = len(ota_df[ota_df['ota_classification'] == 'moderate']) if not ota_df.empty else 0
-    ota_potential = len(ota_df[ota_df['ota_classification'] == 'potential']) if not ota_df.empty else 0
-
-    air_strong = len(air_df[air_df['air_classification'] == 'strong']) if not air_df.empty else 0
-    air_moderate = len(air_df[air_df['air_classification'] == 'moderate']) if not air_df.empty else 0
-    air_potential = len(air_df[air_df['air_classification'] == 'potential']) if not air_df.empty else 0
-
-    tier1 = len(combined_df[combined_df['priority_tier'] == 'Tier 1']) if not combined_df.empty else 0
-    tier2 = len(combined_df[combined_df['priority_tier'] == 'Tier 2']) if not combined_df.empty else 0
-    tier3 = len(combined_df[combined_df['priority_tier'] == 'Tier 3']) if not combined_df.empty else 0
-    tier4 = len(combined_df[combined_df['priority_tier'] == 'Tier 4']) if not combined_df.empty else 0
-
-    both_count = len(combined_df[combined_df['segment'] == 'OTA + Air Ticketing']) if not combined_df.empty else 0
-
-    summary = f"""
+        summary = f"""
 ================================================================================
   PIPELINE SUMMARY — {country.upper()}
   Run at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 ================================================================================
 
-INPUT
-  File:    {input_path}
-  Records: {len(df)}
-
-STAGE 1: EXCLUSION
-  Excluded:  {len(excluded_df)}
-  Remaining: {len(kept_df)}
-
-STAGE 2: CLASSIFICATION
-
-  OTA Candidates: {len(ota_df)}
-    - Strong:    {ota_strong}
-    - Moderate:  {ota_moderate}
-    - Potential:  {ota_potential}
-
-  Air Ticketing Candidates: {len(air_df)}
-    - Strong:    {air_strong}
-    - Moderate:  {air_moderate}
-    - Potential:  {air_potential}
-
-  Overlap (Both OTA + Air): {both_count}
-
-STAGE 3: PRIORITY TIERS (Combined)
-  Total unique candidates: {len(combined_df)}
-    - Tier 1 (Score 70+):  {tier1}  ← Immediate outreach
-    - Tier 2 (Score 45-69): {tier2}  ← Secondary outreach
-    - Tier 3 (Score 20-44): {tier3}  ← Research queue
-    - Tier 4 (Score <20):   {tier4}  ← Archive
-
-OUTPUT FILES
-  {ota_path}
-  {air_path}
-  {combined_path}
-  {excluded_path}
-  {summary_path}
+INPUT RECORDS: {len(df)}
+STAGE 1 EXCLUDED: {len(excluded_df)} | REMAINING: {len(kept_df)}
+STAGE 2 OTA CANDIDATES: {len(ota_results)}
+STAGE 2 AIR CANDIDATES: {len(air_results)}
+TOTAL UNIQUE CANDIDATES FOR PROBE: {len(combined_entries)}
 ================================================================================
 """
+        with open(summary_path, 'w', encoding='utf-8') as f:
+            f.write(summary)
+        print(summary)
+    else:
+        print(f"[5/5] In-memory pipeline complete. Found {len(combined_entries)} unique candidates for probe.")
 
-    with open(summary_path, 'w') as f:
-        f.write(summary)
-
-    print(summary)
-    print("Done!\n")
+    return combined_entries
 
 
 # ==============================================================================

@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-import asyncio
+import io
 import json
 import os
 import shutil
@@ -10,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Request
-from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader
 from pydantic import BaseModel, Field
@@ -23,6 +22,7 @@ if str(SRC_DIR) not in sys.path:
 
 from queries import COUNTRY_CONFIGS
 from orchestrator import execute_pipeline
+from ndc.ndc_tiering import export_leads_to_excel_buffer
 
 app = FastAPI(
     title="Google Maps Scraper - NDC Leads & OTA Finder",
@@ -31,9 +31,7 @@ app = FastAPI(
 )
 
 OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR", BASE_DIR / "output"))
-DATA_DIR = Path(os.getenv("DATA_DIR", BASE_DIR / "data"))
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 jinja_env = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR)))
@@ -47,9 +45,10 @@ class JobCreateRequest(BaseModel):
     custom_keywords: str | None = None
     lang: str = "vi"
     depth: int = 5
-    concurrency: int = 4
+    concurrency: int = 1
     max_sites: int = 0
     market_type: str = "auto"
+    headless: bool = True
 
 
 def format_bytes(size: int) -> str:
@@ -89,17 +88,19 @@ def run_job_task(job_id: str, payload: dict):
             custom_keywords=keywords_list if keywords_list else None,
             lang=payload.get("lang", "en"),
             depth=payload.get("depth", 5),
-            concurrency=payload.get("concurrency", 4),
+            concurrency=payload.get("concurrency", 1),
             output_dir=str(OUTPUT_DIR),
-            data_dir=str(DATA_DIR),
             max_sites=payload.get("max_sites", 0),
             market_type=payload.get("market_type", "auto"),
+            headless=payload.get("headless", True),
             progress_callback=on_progress,
         )
         job["status"] = "completed"
         job["percent"] = 100
         job["finished_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         job["result"] = res
+        job["leads_data"] = res.get("leads_data", {})
+        job["intermediate"] = res.get("intermediate", {})
     except Exception as e:
         t_err = time.strftime("%H:%M:%S")
         job["status"] = "failed"
@@ -133,6 +134,7 @@ async def create_job(req: JobCreateRequest, bg_tasks: BackgroundTasks):
         "concurrency": req.concurrency,
         "market_type": req.market_type,
         "max_sites": req.max_sites,
+        "headless": req.headless,
         "status": "pending",
         "stage": 0,
         "stage_name": "Khoi tao",
@@ -143,6 +145,8 @@ async def create_job(req: JobCreateRequest, bg_tasks: BackgroundTasks):
         "finished_at": None,
         "error": None,
         "result": None,
+        "leads_data": None,
+        "intermediate": None,
         "logs": [f"[{t_now}] Da tao yeu cau tim kiem cho {req.country}"],
     }
     JOBS[job_id] = job_data
@@ -163,18 +167,57 @@ async def get_job(job_id: str):
     return job
 
 
+@app.get("/api/jobs/{job_id}/excel")
+async def download_job_excel(job_id: str):
+    """Xuất file Excel trực tiếp từ RAM (on-the-fly) cho một Job đã hoàn thành."""
+    job = JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job không tồn tại")
+
+    leads_data = job.get("leads_data")
+    if not leads_data and job.get("result"):
+        leads_data = job["result"].get("leads_data")
+
+    # Fallback: đọc từ file JSON nếu có json_path
+    if not leads_data and job.get("result", {}).get("json_path"):
+        jp = Path(job["result"]["json_path"])
+        if jp.exists():
+            try:
+                with open(jp, "r", encoding="utf-8") as f:
+                    leads_data = json.load(f)
+            except Exception:
+                pass
+
+    if not leads_data:
+        raise HTTPException(status_code=400, detail="Chưa có dữ liệu leads cho job này")
+
+    buf = export_leads_to_excel_buffer(leads_data)
+    excel_name = (job.get("result") or {}).get("excel_filename") or f"{job.get('country', 'leads')}_{job_id}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{excel_name}"'}
+    )
+
+
 @app.get("/api/files")
 async def list_files():
     files = []
     if OUTPUT_DIR.exists():
-        for p in sorted(OUTPUT_DIR.glob("*.xlsx"), key=lambda x: x.stat().st_mtime, reverse=True):
+        candidates = list(OUTPUT_DIR.glob("*.json")) + list(OUTPUT_DIR.glob("*.xlsx"))
+        candidates.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+        for p in candidates:
             stat = p.stat()
+            is_json = p.suffix.lower() == ".json"
             files.append({
                 "filename": p.name,
+                "is_json": is_json,
+                "excel_virtual_name": p.stem + ".xlsx" if is_json else p.name,
                 "size_bytes": stat.st_size,
                 "size_human": format_bytes(stat.st_size),
                 "modified_at": datetime.fromtimestamp(stat.st_mtime).strftime("%d/%m/%Y %H:%M:%S"),
                 "download_url": f"/api/files/{p.name}/download",
+                "raw_url": f"/api/files/{p.name}/raw" if is_json else None,
             })
     return {"files": files}
 
@@ -183,12 +226,41 @@ async def list_files():
 async def download_file(filename: str):
     file_path = OUTPUT_DIR / filename
     if not file_path.exists() or not file_path.is_file():
-        raise HTTPException(status_code=404, detail="File khong ton tai")
+        # Nếu người dùng yêu cầu .xlsx nhưng trên đĩa chỉ có .json tương ứng
+        if filename.endswith(".xlsx"):
+            json_alt = OUTPUT_DIR / (filename[:-5] + ".json")
+            if json_alt.exists():
+                file_path = json_alt
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="File không tồn tại")
+
+    if file_path.suffix.lower() == ".json":
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                leads_data = json.load(f)
+            buf = export_leads_to_excel_buffer(leads_data)
+            excel_filename = file_path.stem + ".xlsx"
+            return StreamingResponse(
+                buf,
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={"Content-Disposition": f'attachment; filename="{excel_filename}"'}
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Lỗi khi chuyển đổi JSON sang Excel: {e}")
+
     return FileResponse(
         path=str(file_path),
         filename=filename,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
+
+
+@app.get("/api/files/{filename}/raw")
+async def get_raw_file(filename: str):
+    file_path = OUTPUT_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File không tồn tại")
+    return FileResponse(path=str(file_path), filename=filename, media_type="application/json")
 
 
 @app.delete("/api/files/{filename}")
@@ -201,6 +273,180 @@ async def delete_file(filename: str):
         return {"status": "success", "message": f"Da xoa file {filename}"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/jobs/{job_id}/debug")
+async def get_job_debug_files(job_id: str):
+    """Trả về danh sách dữ liệu trung gian của job từ RAM/Object để hiển thị trực tiếp."""
+    job = JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job khong ton tai")
+
+    inter = job.get("intermediate") or (job.get("result") or {}).get("intermediate") or {}
+    leads = job.get("leads_data") or (job.get("result") or {}).get("leads_data") or {}
+
+    step_files = []
+
+    # Bước 1: queries
+    queries = inter.get("queries") or []
+    if queries:
+        step_files.append({
+            "step": 1,
+            "step_name": "Danh sách từ khoá tìm kiếm",
+            "filename": "step1_queries.txt",
+            "type": "text",
+            "rows": len(queries),
+            "size_human": format_bytes(sum(len(q.encode()) for q in queries)),
+            "download_url": f"/api/jobs/{job_id}/debug/download/step1_queries.txt"
+        })
+
+    # Bước 2: raw count
+    raw_count = inter.get("raw_count", 0)
+    if raw_count > 0:
+        step_files.append({
+            "step": 2,
+            "step_name": "Kết quả cào thô Google Maps (In-Memory)",
+            "filename": "step2_raw_summary.txt",
+            "type": "text",
+            "rows": raw_count,
+            "size_human": f"{raw_count} địa điểm",
+            "download_url": f"/api/jobs/{job_id}/debug/download/step2_raw_summary.txt"
+        })
+
+    # Bước 3: candidates
+    candidates = inter.get("candidates") or []
+    cand_count = inter.get("candidates_count", len(candidates))
+    if candidates or cand_count > 0:
+        step_files.append({
+            "step": 3,
+            "step_name": "Lọc Heuristic — Ứng viên đại lý (In-Memory)",
+            "filename": "step3_candidates.json",
+            "type": "json",
+            "rows": cand_count,
+            "size_human": format_bytes(len(json.dumps(candidates))),
+            "download_url": f"/api/jobs/{job_id}/debug/download/step3_candidates.json"
+        })
+
+    # Bước 4: verdicts
+    verdicts = inter.get("verdicts") or []
+    if verdicts:
+        step_files.append({
+            "step": 4,
+            "step_name": "Thẩm định website (Verdicts In-Memory)",
+            "filename": "step4_verdicts.json",
+            "type": "json",
+            "rows": len(verdicts),
+            "size_human": format_bytes(len(json.dumps(verdicts))),
+            "download_url": f"/api/jobs/{job_id}/debug/download/step4_verdicts.json"
+        })
+
+    # Bước 4b: reverify
+    reverify = inter.get("reverify") or []
+    if reverify:
+        step_files.append({
+            "step": 4,
+            "step_name": "Reverify browser kết quả (JSON In-Memory)",
+            "filename": "step4_reverify.json",
+            "type": "json",
+            "rows": len(reverify),
+            "size_human": format_bytes(len(json.dumps(reverify))),
+            "download_url": f"/api/jobs/{job_id}/debug/download/step4_reverify.json"
+        })
+
+    # Bước 5: leads_data
+    if leads:
+        qual_count = len(leads.get("qualified_leads", []))
+        drop_count = len(leads.get("dropped_leads", []))
+        step_files.append({
+            "step": 5,
+            "step_name": "Phân Tier NDC Leads (JSON Object)",
+            "filename": "step5_final_leads.json",
+            "type": "json",
+            "rows": qual_count + drop_count,
+            "size_human": format_bytes(len(json.dumps(leads))),
+            "download_url": f"/api/jobs/{job_id}/debug/download/step5_final_leads.json"
+        })
+
+    return {"files": step_files, "work_dir": "In-Memory (RAM Object - Không lưu file rác)"}
+
+
+@app.get("/api/jobs/{job_id}/debug/view/{filename}")
+async def view_debug_file(job_id: str, filename: str):
+    """Trả về nội dung intermediate trực tiếp từ RAM dưới dạng JSON để hiển thị modal."""
+    job = JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job khong ton tai")
+
+    inter = job.get("intermediate") or (job.get("result") or {}).get("intermediate") or {}
+    leads = job.get("leads_data") or (job.get("result") or {}).get("leads_data") or {}
+
+    if filename == "step1_queries.txt":
+        queries = inter.get("queries") or []
+        return JSONResponse({"type": "text", "content": "\n".join(queries), "filename": filename})
+
+    elif filename == "step2_raw_summary.txt":
+        raw_count = inter.get("raw_count", 0)
+        content = f"Google Maps cào được {raw_count} địa điểm thô.\nDữ liệu được xử lý trực tiếp trên RAM và giải phóng ngay để tối ưu dung lượng server."
+        return JSONResponse({"type": "text", "content": content, "filename": filename})
+
+    elif filename == "step3_candidates.json":
+        cand = inter.get("candidates") or []
+        return JSONResponse({"type": "json", "data": cand, "filename": filename})
+
+    elif filename == "step4_verdicts.json":
+        verdicts = inter.get("verdicts") or []
+        return JSONResponse({"type": "json", "data": verdicts, "filename": filename})
+
+    elif filename == "step4_reverify.json":
+        reverify = inter.get("reverify") or []
+        return JSONResponse({"type": "json", "data": reverify, "filename": filename})
+
+    elif filename == "step5_final_leads.json":
+        return JSONResponse({"type": "json", "data": leads, "filename": filename})
+
+    raise HTTPException(status_code=404, detail=f"Không tìm thấy dữ liệu cho {filename}")
+
+
+@app.get("/api/jobs/{job_id}/debug/download/{filename}")
+async def download_debug_file(job_id: str, filename: str):
+    """Tải file debug trực tiếp từ RAM."""
+    job = JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job khong ton tai")
+
+    inter = job.get("intermediate") or (job.get("result") or {}).get("intermediate") or {}
+    leads = job.get("leads_data") or (job.get("result") or {}).get("leads_data") or {}
+
+    if filename == "step1_queries.txt":
+        queries = inter.get("queries") or []
+        buf = io.BytesIO("\n".join(queries).encode("utf-8"))
+        return StreamingResponse(buf, media_type="text/plain", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+    elif filename == "step2_raw_summary.txt":
+        raw_count = inter.get("raw_count", 0)
+        buf = io.BytesIO(f"raw_count: {raw_count}\n".encode("utf-8"))
+        return StreamingResponse(buf, media_type="text/plain", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+    elif filename == "step3_candidates.json":
+        cand = inter.get("candidates") or []
+        buf = io.BytesIO(json.dumps(cand, ensure_ascii=False, indent=2).encode("utf-8"))
+        return StreamingResponse(buf, media_type="application/json", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+    elif filename == "step4_verdicts.json":
+        verdicts = inter.get("verdicts") or []
+        buf = io.BytesIO(json.dumps(verdicts, ensure_ascii=False, indent=2).encode("utf-8"))
+        return StreamingResponse(buf, media_type="application/json", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+    elif filename == "step4_reverify.json":
+        reverify = inter.get("reverify") or []
+        buf = io.BytesIO(json.dumps(reverify, ensure_ascii=False, indent=2).encode("utf-8"))
+        return StreamingResponse(buf, media_type="application/json", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+    elif filename == "step5_final_leads.json":
+        buf = io.BytesIO(json.dumps(leads, ensure_ascii=False, indent=2).encode("utf-8"))
+        return StreamingResponse(buf, media_type="application/json", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+    raise HTTPException(status_code=404, detail=f"Không tìm thấy dữ liệu cho {filename}")
 
 
 if __name__ == "__main__":

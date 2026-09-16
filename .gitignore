@@ -16,3 +16,5 @@ bin/google-maps-scraper.exe
 !bin/.gitkeep
 .DS_Store
 .env
+DEPLOY_AGENT.md
+logs/
