@@ -133,7 +133,7 @@ def execute_pipeline(
             ]
             print(f"    Chưa có cấu hình sẵn cho {country_key}, sử dụng {len(queries)} từ khoá mặc định.")
 
-    update_progress(1, "Sinh danh sách từ khoá", 20, f"Đã sinh xong {len(queries)} từ khoá: {queries}")
+    update_progress(1, "Sinh danh sách từ khoá", 20, f"Đã sinh xong {len(queries)} từ khoá: {queries}", inter_data={"queries": queries})
 
     # -------------------------------------------------------------------------
     # BƯỚC 2: CÀO DỮ LIỆU GOOGLE MAPS (IN-MEMORY QUA TEMPFILE)
@@ -359,7 +359,7 @@ def execute_pipeline(
         progress_callback=progress_callback,
     )
     v_count = len(verdicts)
-    update_progress(4, "Thẩm định website", 85, f"Đã thẩm định xong {v_count} website ứng viên.")
+    update_progress(4, "Thẩm định website", 85, f"Đã thẩm định xong {v_count} website ứng viên.", inter_data={"verdicts": verdicts, "reverify": reverify_list})
 
     # -------------------------------------------------------------------------
     # BƯỚC 5: PHÂN TIER & XUẤT JSON KẾT QUẢ DUY NHẤT (KHÔNG TẠO EXCEL TĨNH)
