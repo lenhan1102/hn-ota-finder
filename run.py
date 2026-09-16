@@ -5,6 +5,12 @@ run.py - Khởi động Web Server trực tiếp (Native Python):
 """
 import os
 import sys
+import resource
+try:
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    resource.setrlimit(resource.RLIMIT_NOFILE, (hard, hard))
+except Exception:
+    pass
 from pathlib import Path
 import uvicorn
 try:
