@@ -179,12 +179,16 @@ def execute_pipeline(
 
         print("    Executing:", " ".join(scraper_cmd))
         t0 = time.time()
-        scraper_res = subprocess.run(scraper_cmd, capture_output=True, text=True)
+        scraper_env = os.environ.copy()
+        user_home = os.path.expanduser("~")
+        scraper_env["HOME"] = user_home
+        scraper_env["PLAYWRIGHT_BROWSERS_PATH"] = os.path.join(user_home, ".cache", "ms-playwright")
+        scraper_res = subprocess.run(scraper_cmd, capture_output=True, text=True, env=scraper_env)
         print(f"    Cao xong trong {int(time.time() - t0)} giay.")
 
         if scraper_res.returncode != 0:
-            err_msg = scraper_res.stderr.strip() if scraper_res.stderr else ""
-            print(f"    [CẢNH BÁO] Scraper kết thúc với mã {scraper_res.returncode}: {err_msg[-250:] if err_msg else ''}")
+            err_msg = (scraper_res.stderr or scraper_res.stdout or "").strip()
+            print(f"    [CẢNH BÁO] Scraper kết thúc với mã {scraper_res.returncode}: {err_msg[-400:] if err_msg else ''}")
 
         # Đọc dữ liệu JSON vào RAM ngay lập tức (hỗ trợ cả JSON Array và JSON Lines)
         if Path(temp_results_json).exists() and Path(temp_results_json).stat().st_size > 0:
