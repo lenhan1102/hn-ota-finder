@@ -663,7 +663,7 @@
 
   <header>
     <div class="header-container">
-      <div class="brand">
+      <div class="brand" id="brandSecretTrigger" style="cursor: default; user-select: none;" title="Hệ thống NDC Leads & OTA Finder">
         <div class="brand-icon">✈️</div>
         <div class="brand-text">
           <h1>NDC LEADS & OTA FINDER</h1>
@@ -775,6 +775,19 @@
                   <option value="consolidator">Consolidator (Chỉ cần có bán vé)</option>
                   <option value="ota_first">OTA-First (Bắt buộc có Online Search)</option>
                 </select>
+              </div>
+
+              <!-- Dev Secret: Mặc định ẩn với người dùng thông thường, dev kích hoạt bí mật mới hiện -->
+              <div class="form-group" id="headlessGroup" style="display: none; background: rgba(99, 102, 241, 0.07); border: 1px dashed rgba(99, 102, 241, 0.35); border-radius: var(--radius-sm); padding: 12px 14px; margin-top: 10px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                  <label for="headlessSelect" style="margin-bottom: 0; font-weight: 600; color: #a5b4fc; font-size: 13px;">🖥️ Chế độ trình duyệt (Dev Secret):</label>
+                  <span style="font-size: 10px; background: rgba(99, 102, 241, 0.25); color: #c7d2fe; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-weight: 700;">DEV MODE</span>
+                </div>
+                <select id="headlessSelect" class="form-control" style="border-color: rgba(99, 102, 241, 0.4);">
+                  <option value="true" selected>Headless (Chạy ẩn không mở cửa sổ - Mặc định)</option>
+                  <option value="false">Mở cửa sổ Chromium (Trực quan / Debug GUI)</option>
+                </select>
+                <div class="helper-text" style="font-size: 11px; margin-top: 4px; color: #94a3b8;">* Lựa chọn bí mật dành cho dev debug trực quan.</div>
               </div>
             </div>
           </div>
@@ -936,7 +949,8 @@
       const concurrency = parseInt(document.getElementById('concurrencyInput').value);
       const max_sites = parseInt(document.getElementById('maxSitesInput').value);
       const market_type = document.getElementById('marketType').value;
-      const headless = true;
+      const headlessSelect = document.getElementById('headlessSelect');
+      const headless = headlessSelect ? (headlessSelect.value === 'true') : true;
 
       const payload = {
         country,
@@ -1147,8 +1161,68 @@
       }, 3000);
     }
 
+    // ======= DEV SECRET: TOGGLE HEADLESS SELECTION =======
+    function toggleDevHeadless(forceState = null) {
+      const group = document.getElementById('headlessGroup');
+      if (!group) return;
+      const isCurrentlyShown = group.style.display !== 'none';
+      const shouldShow = forceState !== null ? forceState : !isCurrentlyShown;
+      
+      if (shouldShow) {
+        group.style.display = 'block';
+        localStorage.setItem('dev_secret_headless', 'true');
+        showToast('🛠️ Đã bật chế độ Dev: Hiển thị tuỳ chọn Headless!', 'info');
+      } else {
+        group.style.display = 'none';
+        localStorage.removeItem('dev_secret_headless');
+        const sel = document.getElementById('headlessSelect');
+        if (sel) sel.value = 'true';
+        showToast('🔒 Đã đóng chế độ Dev: Ẩn tuỳ chọn Headless.', 'info');
+      }
+    }
+
+    // Secret Trigger 1: Click 5 lần liên tiếp vào Logo/Brand Header trong vòng 2.5 giây
+    let secretClickCount = 0;
+    let secretClickTimer = null;
+    const brandTrigger = document.getElementById('brandSecretTrigger');
+    if (brandTrigger) {
+      brandTrigger.addEventListener('click', () => {
+        secretClickCount++;
+        if (secretClickTimer) clearTimeout(secretClickTimer);
+        secretClickTimer = setTimeout(() => {
+          secretClickCount = 0;
+        }, 2500);
+
+        if (secretClickCount >= 5) {
+          secretClickCount = 0;
+          toggleDevHeadless();
+        }
+      });
+    }
+
+    // Secret Trigger 2: Phím tắt Ctrl + Shift + D (hoặc Cmd + Shift + D trên Mac)
+    document.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'D' || e.key === 'd')) {
+        e.preventDefault();
+        toggleDevHeadless();
+      }
+    });
+
+    // Secret Trigger 3 & LocalStorage check khi tải trang (?dev=1, ?debug=1 hoặc đã lưu trước đó)
+    function initDevSecret() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const isParamDev = urlParams.has('dev') || urlParams.has('debug') || urlParams.has('headless');
+      const isSavedDev = localStorage.getItem('dev_secret_headless') === 'true';
+
+      if (isParamDev || isSavedDev) {
+        const group = document.getElementById('headlessGroup');
+        if (group) group.style.display = 'block';
+      }
+    }
+
     // Init
     window.onload = () => {
+      initDevSecret();
       fetchJobs();
       fetchFiles();
       startPolling();

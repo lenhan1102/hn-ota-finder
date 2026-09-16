@@ -180,6 +180,10 @@ def execute_pipeline(
         print("    Executing:", " ".join(scraper_cmd))
         t0 = time.time()
         scraper_env = os.environ.copy()
+        # Loại bỏ các biến IPC của PM2/Node để tránh làm crash tiến trình Node.js ngầm của playwright-go
+        for k in list(scraper_env.keys()):
+            if k.startswith("NODE_"):
+                scraper_env.pop(k, None)
         user_home = os.path.expanduser("~")
         scraper_env["HOME"] = user_home
         scraper_env["PLAYWRIGHT_BROWSERS_PATH"] = os.path.join(user_home, ".cache", "ms-playwright")

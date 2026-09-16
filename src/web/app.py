@@ -109,10 +109,21 @@ def run_job_task(job_id: str, payload: dict):
         job["logs"].append(f"[{t_err}] [ERROR] {e}")
 
 
+def is_local_env() -> bool:
+    if os.getenv("APP_ENV", "").lower() == "production":
+        return False
+    if Path("/home/tide").exists():
+        return False
+    return True
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index():
     template = jinja_env.get_template("index.html")
-    rendered = template.render(countries=sorted(list(COUNTRY_CONFIGS.keys())))
+    rendered = template.render(
+        countries=sorted(list(COUNTRY_CONFIGS.keys())),
+        is_local=is_local_env()
+    )
     return HTMLResponse(content=rendered)
 
 
@@ -125,6 +136,7 @@ async def get_countries():
 async def create_job(req: JobCreateRequest, bg_tasks: BackgroundTasks):
     job_id = f"job_{int(time.time())}_{uuid.uuid4().hex[:6]}"
     t_now = time.strftime("%H:%M:%S")
+    headless_val = req.headless
     job_data = {
         "id": job_id,
         "country": req.country,
@@ -134,7 +146,7 @@ async def create_job(req: JobCreateRequest, bg_tasks: BackgroundTasks):
         "concurrency": req.concurrency,
         "market_type": req.market_type,
         "max_sites": req.max_sites,
-        "headless": req.headless,
+        "headless": headless_val,
         "status": "pending",
         "stage": 0,
         "stage_name": "Khoi tao",
@@ -150,7 +162,9 @@ async def create_job(req: JobCreateRequest, bg_tasks: BackgroundTasks):
         "logs": [f"[{t_now}] Da tao yeu cau tim kiem cho {req.country}"],
     }
     JOBS[job_id] = job_data
-    bg_tasks.add_task(run_job_task, job_id, req.model_dump())
+    payload_data = req.model_dump()
+    payload_data["headless"] = headless_val
+    bg_tasks.add_task(run_job_task, job_id, payload_data)
     return {"job_id": job_id, "status": "pending"}
 
 

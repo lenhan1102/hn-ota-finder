@@ -10,6 +10,7 @@ module.exports = {
         HOST: "0.0.0.0",
         PYTHONUNBUFFERED: "1",
         RELOAD: "false",
+        APP_ENV: "production",
         HOME: "/home/tide",
         PLAYWRIGHT_BROWSERS_PATH: "/home/tide/.cache/ms-playwright",
       },
