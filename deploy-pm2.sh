@@ -46,13 +46,7 @@ mkdir -p logs
 if [ ! -f "bin/google-maps-scraper" ]; then
     echo "⚠️ CHÚ Ý: Chưa tìm thấy binary bin/google-maps-scraper cho Linux!"
     echo "Đang thử tải phiên bản Linux amd64 từ GitHub Release..."
-    TMP_DIR=$(mktemp -d)
-    curl -sL https://github.com/gosom/google-maps-scraper/releases/latest/download/google_maps_scraper_linux_amd64.tar.gz -o "$TMP_DIR/gmaps.tar.gz" || true
-    if [ -f "$TMP_DIR/gmaps.tar.gz" ]; then
-        tar -xzf "$TMP_DIR/gmaps.tar.gz" -C "$TMP_DIR" || true
-        find "$TMP_DIR" -type f -name "*scraper*" -exec cp {} bin/google-maps-scraper \;
-        rm -rf "$TMP_DIR"
-    fi
+    curl -sL https://github.com/gosom/google-maps-scraper/releases/download/v1.18.0/google_maps_scraper-1.18.0-linux-amd64 -o bin/google-maps-scraper || true
 fi
 
 if [ -f "bin/google-maps-scraper" ]; then
