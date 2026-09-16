@@ -79,11 +79,39 @@ def execute_pipeline(
     update_progress(1, "Sinh danh sach tu khoa", 10, "Dang tong hop tu khoa tim kiem...")
     queries = []
     if custom_keywords:
+        country_cfg = COUNTRY_CONFIGS.get(country_key, None)
+        country_label = country_cfg.country_label if country_cfg else country_key.title()
+
         for kw in custom_keywords:
             kw_clean = kw.strip()
-            if kw_clean and kw_clean not in queries:
-                queries.append(kw_clean)
-        print(f"    Su dung {len(queries)} tu khoa tuy chinh do nguoi dung nhap.")
+            if not kw_clean:
+                continue
+
+            kw_lower = kw_clean.lower()
+            has_location = any(
+                loc in kw_lower for loc in [
+                    country_key,
+                    country_label.lower(),
+                    "việt nam", "viet nam", "hà nội", "hanoi", "sài gòn", "saigon",
+                    "hồ chí minh", "ho chi minh", "đà nẵng", "danang", "bangkok",
+                    "jakarta", "manila", "hong kong", "hongkong", "tại", "in", "ở"
+                ]
+            )
+
+            # Nếu từ khóa chỉ là cụm chung chung không kèm địa danh (ví dụ 'phòng vé máy bay'),
+            # tự động gắn thêm địa danh/quốc gia để Google Maps trả về danh sách Feed kết quả thay vì điều hướng đường đi
+            if not has_location:
+                if lang == "vi" or any(c in kw_lower for c in "áàảãạăắằẳẵặâấầẩẫậéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵđ"):
+                    scoped_kw = f"{kw_clean} tại {country_label}"
+                else:
+                    scoped_kw = f"{kw_clean} in {country_label}"
+            else:
+                scoped_kw = kw_clean
+
+            if scoped_kw not in queries:
+                queries.append(scoped_kw)
+
+        print(f"    Su dung {len(queries)} tu khoa sau khi chuan hoa dia danh: {queries}")
 
     if not queries:
         if country_key in COUNTRY_CONFIGS:
@@ -151,8 +179,12 @@ def execute_pipeline(
 
         print("    Executing:", " ".join(scraper_cmd))
         t0 = time.time()
-        subprocess.run(scraper_cmd, check=True)
+        scraper_res = subprocess.run(scraper_cmd, capture_output=True, text=True)
         print(f"    Cao xong trong {int(time.time() - t0)} giay.")
+
+        if scraper_res.returncode != 0:
+            err_msg = scraper_res.stderr.strip() if scraper_res.stderr else ""
+            print(f"    [CẢNH BÁO] Scraper kết thúc với mã {scraper_res.returncode}: {err_msg[-250:] if err_msg else ''}")
 
         # Đọc dữ liệu JSON vào RAM ngay lập tức (hỗ trợ cả JSON Array và JSON Lines)
         if Path(temp_results_json).exists() and Path(temp_results_json).stat().st_size > 0:
@@ -176,6 +208,12 @@ def execute_pipeline(
                                 except Exception:
                                     pass
             print(f"    Doc thanh cong {len(raw_places)} dia diem tu scraper vao RAM.")
+
+        if not raw_places and scraper_res.returncode != 0:
+            raise RuntimeError(
+                f"Google Maps Scraper không tìm thấy kết quả hoặc bị lỗi khi cào các từ khóa: {queries}. "
+                "Vui lòng thử từ khóa cụ thể hơn kèm địa danh (ví dụ: 'phòng vé máy bay tại Hà Nội', 'đại lý vé máy bay Việt Nam')."
+            )
     finally:
         # Xoá ngay file tạm sau khi đã nạp dữ liệu vào RAM để tránh đầy đĩa server
         try:
