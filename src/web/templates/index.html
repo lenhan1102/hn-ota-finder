@@ -776,14 +776,6 @@
                   <option value="ota_first">OTA-First (Bắt buộc có Online Search)</option>
                 </select>
               </div>
-
-              <div class="form-group">
-                <label for="headlessInput">Cửa sổ trình duyệt Chromium:</label>
-                <select id="headlessInput" class="form-control">
-                  <option value="true" selected>🙈 Chạy ngầm (Bật Headless - Tiết kiệm tài nguyên)</option>
-                  <option value="false">👁️ Hiển thị cửa sổ thật (Tắt Headless - Xem trực tiếp)</option>
-                </select>
-              </div>
             </div>
           </div>
 
@@ -944,7 +936,7 @@
       const concurrency = parseInt(document.getElementById('concurrencyInput').value);
       const max_sites = parseInt(document.getElementById('maxSitesInput').value);
       const market_type = document.getElementById('marketType').value;
-      const headless = document.getElementById('headlessInput') ? document.getElementById('headlessInput').value === 'true' : false;
+      const headless = true;
 
       const payload = {
         country,
