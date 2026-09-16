@@ -67,7 +67,7 @@ def run_job_task(job_id: str, payload: dict):
     job["status"] = "running"
     job["started_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    def on_progress(stage: int, stage_name: str, percent: int, message: str):
+    def on_progress(stage: int, stage_name: str, percent: int, message: str, inter_data: dict = None):
         if job.get("cancelled"):
             raise Exception("Tiến trình đã bị huỷ bởi người dùng.")
 
@@ -78,6 +78,10 @@ def run_job_task(job_id: str, payload: dict):
             job["percent"] = percent
             job["message"] = message
             job["logs"].append(f"[{t_str}] {message}")
+            if inter_data:
+                if job.get("intermediate") is None:
+                    job["intermediate"] = {}
+                job["intermediate"].update(inter_data)
 
     keywords_list = []
     if payload.get("custom_keywords"):

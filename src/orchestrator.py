@@ -55,11 +55,16 @@ def execute_pipeline(
     import tempfile
     import json
 
-    def update_progress(stage: int, stage_name: str, percent: int, message: str):
+    def update_progress(stage: int, stage_name: str, percent: int, message: str, inter_data: dict = None):
         print(f"[{stage}/5] ({percent}%) {stage_name}: {message}")
         if progress_callback:
             try:
-                progress_callback(stage, stage_name, percent, message)
+                import inspect
+                sig = inspect.signature(progress_callback)
+                if 'inter_data' in sig.parameters:
+                    progress_callback(stage, stage_name, percent, message, inter_data=inter_data)
+                else:
+                    progress_callback(stage, stage_name, percent, message)
             except Exception as e:
                 print(f"    [WARN] Callback error: {e}")
 
@@ -296,7 +301,7 @@ def execute_pipeline(
         }
 
     print(f"    [BƯỚC 2 KẾT QUẢ] Google Maps cào được {raw_count} doanh nghiệp thô (In-Memory).")
-    update_progress(2, "Cào dữ liệu Google Maps", 50, f"Cào thô hoàn tất: {raw_count} doanh nghiệp. Bắt đầu lọc rác sơ bộ...")
+    update_progress(2, "Cào dữ liệu Google Maps", 50, f"Cào thô hoàn tất: {raw_count} doanh nghiệp. Bắt đầu lọc rác sơ bộ...", inter_data={"raw_count": raw_count, "raw_places": simplified_raw[:500]})
 
     # -------------------------------------------------------------------------
     # BƯỚC 3: LỌC RÁC SƠ BỘ & CHẤM ĐIỂM HEURISTIC (THUẦN IN-MEMORY)
@@ -311,6 +316,7 @@ def execute_pipeline(
     cand_count = len(candidates)
     excl_count = len(excluded_records)
     print(f"    [BƯỚC 3 KẾT QUẢ] Sau lọc Heuristic còn lại {cand_count} ứng viên đủ điều kiện thẩm định (Đã lọc bỏ: {excl_count}).")
+    update_progress(3, "Lọc rác sơ bộ & Heuristic", 65, f"Xong lọc rác. Còn {cand_count} ứng viên.", inter_data={"candidates_count": cand_count, "excluded_count": excl_count, "candidates": candidates, "excluded": excluded_records[:200]})
 
     if cand_count == 0:
         msg = f"0/{raw_count} doanh nghiệp vượt qua bước lọc Heuristic."
