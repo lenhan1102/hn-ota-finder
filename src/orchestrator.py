@@ -271,7 +271,7 @@ def execute_pipeline(
                 "title": p.get("title", "N/A"),
                 "category": p.get("category", ""),
                 "address": p.get("address", ""),
-                "website": p.get("website", ""),
+                "website": p.get("web_site") or p.get("website", ""),
                 "phone": p.get("phone", "")
             })
     

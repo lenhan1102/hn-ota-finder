@@ -534,6 +534,7 @@ def run_pipeline(input_data, country: str, output_dir: str = None, return_exclud
         'web': 'website',
         'url': 'website',
         'site': 'website',
+        'web_site': 'website',
         'name': 'title',
         'email': 'emails',
     }
