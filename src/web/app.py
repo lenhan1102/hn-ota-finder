@@ -455,6 +455,7 @@ async def get_job_steps_data(job_id: str):
         },
         "step2": {
             "raw_count": raw_count,
+            "raw_places": inter.get("raw_places", []),
             "concurrency": job.get("concurrency", 1),
             "depth": job.get("depth", 5),
             "lang": job.get("lang", "vi"),

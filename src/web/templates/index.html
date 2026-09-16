@@ -812,21 +812,6 @@
       <button class="tab-btn" onclick="switchTab('tab-jobs')">
         <span>⚡</span> Tiến độ <span class="badge-count" id="activeJobsBadge">0</span>
       </button>
-      <button class="tab-btn" onclick="switchTab('tab-step1')">
-        <span>📝</span> Bước 1: Từ khoá
-      </button>
-      <button class="tab-btn" onclick="switchTab('tab-step2')">
-        <span>📍</span> Bước 2: Cào GMaps
-      </button>
-      <button class="tab-btn" onclick="switchTab('tab-step3')">
-        <span>🔍</span> Bước 3: Lọc Heuristic
-      </button>
-      <button class="tab-btn" onclick="switchTab('tab-step4')">
-        <span>🌐</span> Bước 4: Thẩm định Web
-      </button>
-      <button class="tab-btn" onclick="switchTab('tab-step5')">
-        <span>📊</span> Bước 5: Phân Tier Leads
-      </button>
       <button class="tab-btn" onclick="switchTab('tab-files')">
         <span>📁</span> File Excel <span class="badge-count" id="filesBadge">0</span>
       </button>
@@ -940,9 +925,9 @@
       </div>
     </div>
 
-    <!-- TAB 2: TIẾN ĐỘ ĐANG CHẠY -->
+    <!-- TAB 2: TIẾN ĐỘ ĐANG CHẠY & CHI TIẾT JOB -->
     <div id="tab-jobs" class="tab-pane">
-      <div class="card">
+      <div class="card" id="jobsListCard">
         <div class="card-header">
           <div class="card-title">
             <span>⚡</span> Trạng Thái Tiến Trình Cào & Thẩm Định
@@ -959,10 +944,33 @@
           </div>
         </div>
       </div>
+
+      <!-- JOB DETAIL VIEW (Hidden by default) -->
+      <div id="jobDetailContainer" style="display: none;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 20px;">
+          <button class="btn btn-secondary btn-sm" onclick="closeJobDetails()">⬅ Quay lại danh sách tiến trình</button>
+          <div style="text-align: right;">
+            <div style="font-weight: 700; font-size: 15px; color: #fff;">Chi tiết tiến trình: <span id="detailJobIdText" style="color:var(--accent);"></span></div>
+            <div class="stepJobMetaBadge" style="font-size: 12px; color: var(--text-dim); margin-top: 4px;"></div>
+          </div>
+        </div>
+
+        <div class="tabs-nav" style="background: rgba(10, 14, 26, 0.8); margin-bottom: 16px;">
+          <button class="tab-btn active" id="btn-tab-step1" onclick="switchJobStepTab('tab-step1')">B1: Từ khoá</button>
+          <button class="tab-btn" id="btn-tab-step2" onclick="switchJobStepTab('tab-step2')">B2: Cào GMaps</button>
+          <button class="tab-btn" id="btn-tab-step3" onclick="switchJobStepTab('tab-step3')">B3: Lọc Heuristic</button>
+          <button class="tab-btn" id="btn-tab-step4" onclick="switchJobStepTab('tab-step4')">B4: Thẩm định Web</button>
+          <button class="tab-btn" id="btn-tab-step5" onclick="switchJobStepTab('tab-step5')">B5: Phân Tier</button>
+        </div>
+
+        <div id="jobDetailStepsArea">
+          <!-- Step panes will be moved here via JS or nested here directly -->
+        </div>
+      </div>
     </div>
 
     <!-- TAB STEP 1: TỪ KHOÁ TÌM KIẾM -->
-    <div id="tab-step1" class="tab-pane">
+    <div id="tab-step1" class="job-step-pane" style="display:none;">
       <div class="card">
         <div class="card-header">
           <div class="card-title">
@@ -970,18 +978,7 @@
           </div>
         </div>
 
-        <div class="step-toolbar">
-          <div style="display:flex;align-items:center;gap:10px;">
-            <span style="font-size:13px;color:var(--text-sub);font-weight:600;">Chiến dịch đang xem:</span>
-            <select class="form-control stepJobSelect" style="min-width:260px;padding:6px 12px;font-size:13px;" onchange="onStepJobSelectChange(this.value)">
-              <option value="">-- Chọn chiến dịch để xem --</option>
-            </select>
-          </div>
-          <div style="display:flex;align-items:center;gap:8px;">
-            <span class="stepJobMetaBadge" style="font-size:12px;color:var(--text-dim);"></span>
-            <button class="btn btn-secondary btn-sm" onclick="reloadCurrentStepData()">🔄 Làm mới dữ liệu</button>
-          </div>
-        </div>
+        
 
         <div class="kpi-grid">
           <div class="kpi-card">
@@ -1019,7 +1016,7 @@
     </div>
 
     <!-- TAB STEP 2: CÀO GOOGLE MAPS -->
-    <div id="tab-step2" class="tab-pane">
+    <div id="tab-step2" class="job-step-pane" style="display:none;">
       <div class="card">
         <div class="card-header">
           <div class="card-title">
@@ -1027,40 +1024,23 @@
           </div>
         </div>
 
-        <div class="step-toolbar">
-          <div style="display:flex;align-items:center;gap:10px;">
-            <span style="font-size:13px;color:var(--text-sub);font-weight:600;">Chiến dịch đang xem:</span>
-            <select class="form-control stepJobSelect" style="min-width:260px;padding:6px 12px;font-size:13px;" onchange="onStepJobSelectChange(this.value)">
-              <option value="">-- Chọn chiến dịch để xem --</option>
-            </select>
-          </div>
-          <div style="display:flex;align-items:center;gap:8px;">
-            <span class="stepJobMetaBadge" style="font-size:12px;color:var(--text-dim);"></span>
-            <button class="btn btn-secondary btn-sm" onclick="reloadCurrentStepData()">🔄 Làm mới dữ liệu</button>
-          </div>
-        </div>
+        
 
-        <div class="kpi-grid">
-          <div class="kpi-card">
-            <div class="kpi-label">Doanh nghiệp cào được</div>
-            <div class="kpi-value" id="step2RawCount" style="color:#38bdf8;">–</div>
-            <div class="kpi-sub">Địa điểm thu thập từ GMaps Feed</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-label">Trình duyệt Playwright</div>
-            <div class="kpi-value" id="step2Concurrency">–</div>
-            <div class="kpi-sub">Số luồng song song</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-label">Độ sâu cuộn trang</div>
-            <div class="kpi-value" id="step2Depth">–</div>
-            <div class="kpi-sub">Mức độ cuộn danh sách</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-label">Cơ chế lưu trữ</div>
-            <div class="kpi-value" style="font-size:16px;color:#10b981;">In-Memory (RAM)</div>
-            <div class="kpi-sub">Giải phóng tức thì, không rác ổ cứng</div>
-          </div>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:60px;">STT</th>
+                <th>Tên doanh nghiệp</th>
+                <th>Danh mục</th>
+                <th>Địa chỉ</th>
+                <th>Liên hệ (SĐT / Web)</th>
+              </tr>
+            </thead>
+            <tbody id="step2TableBody">
+              <tr><td colspan="5"><div class="empty-state"><div class="empty-state-icon">📝</div><p>Chọn một chiến dịch ở trên để xem danh sách địa điểm cào được.</p></div></td></tr>
+            </tbody>
+          </table>
         </div>
 
         <div class="advanced-box" style="margin-top:10px;">
@@ -1073,7 +1053,7 @@
     </div>
 
     <!-- TAB STEP 3: LỌC HEURISTIC -->
-    <div id="tab-step3" class="tab-pane">
+    <div id="tab-step3" class="job-step-pane" style="display:none;">
       <div class="card">
         <div class="card-header">
           <div class="card-title">
@@ -1081,18 +1061,7 @@
           </div>
         </div>
 
-        <div class="step-toolbar">
-          <div style="display:flex;align-items:center;gap:10px;">
-            <span style="font-size:13px;color:var(--text-sub);font-weight:600;">Chiến dịch đang xem:</span>
-            <select class="form-control stepJobSelect" style="min-width:260px;padding:6px 12px;font-size:13px;" onchange="onStepJobSelectChange(this.value)">
-              <option value="">-- Chọn chiến dịch để xem --</option>
-            </select>
-          </div>
-          <div style="display:flex;align-items:center;gap:8px;">
-            <span class="stepJobMetaBadge" style="font-size:12px;color:var(--text-dim);"></span>
-            <button class="btn btn-secondary btn-sm" onclick="reloadCurrentStepData()">🔄 Làm mới dữ liệu</button>
-          </div>
-        </div>
+        
 
         <div class="kpi-grid">
           <div class="kpi-card">
@@ -1163,7 +1132,7 @@
     </div>
 
     <!-- TAB STEP 4: THẨM ĐỊNH WEBSITE -->
-    <div id="tab-step4" class="tab-pane">
+    <div id="tab-step4" class="job-step-pane" style="display:none;">
       <div class="card">
         <div class="card-header">
           <div class="card-title">
@@ -1171,18 +1140,7 @@
           </div>
         </div>
 
-        <div class="step-toolbar">
-          <div style="display:flex;align-items:center;gap:10px;">
-            <span style="font-size:13px;color:var(--text-sub);font-weight:600;">Chiến dịch đang xem:</span>
-            <select class="form-control stepJobSelect" style="min-width:260px;padding:6px 12px;font-size:13px;" onchange="onStepJobSelectChange(this.value)">
-              <option value="">-- Chọn chiến dịch để xem --</option>
-            </select>
-          </div>
-          <div style="display:flex;align-items:center;gap:8px;">
-            <span class="stepJobMetaBadge" style="font-size:12px;color:var(--text-dim);"></span>
-            <button class="btn btn-secondary btn-sm" onclick="reloadCurrentStepData()">🔄 Làm mới dữ liệu</button>
-          </div>
-        </div>
+        
 
         <div class="kpi-grid">
           <div class="kpi-card">
@@ -1229,7 +1187,7 @@
     </div>
 
     <!-- TAB STEP 5: PHÂN TIER LEADS -->
-    <div id="tab-step5" class="tab-pane">
+    <div id="tab-step5" class="job-step-pane" style="display:none;">
       <div class="card">
         <div class="card-header">
           <div class="card-title">
@@ -1238,18 +1196,7 @@
           <div id="step5DownloadExcelBtnContainer"></div>
         </div>
 
-        <div class="step-toolbar">
-          <div style="display:flex;align-items:center;gap:10px;">
-            <span style="font-size:13px;color:var(--text-sub);font-weight:600;">Chiến dịch đang xem:</span>
-            <select class="form-control stepJobSelect" style="min-width:260px;padding:6px 12px;font-size:13px;" onchange="onStepJobSelectChange(this.value)">
-              <option value="">-- Chọn chiến dịch để xem --</option>
-            </select>
-          </div>
-          <div style="display:flex;align-items:center;gap:8px;">
-            <span class="stepJobMetaBadge" style="font-size:12px;color:var(--text-dim);"></span>
-            <button class="btn btn-secondary btn-sm" onclick="reloadCurrentStepData()">🔄 Làm mới dữ liệu</button>
-          </div>
-        </div>
+        
 
         <div class="kpi-grid">
           <div class="kpi-card">
@@ -1911,9 +1858,49 @@
 
   function viewJobSteps(jobId) {
     window._currentStepJobId = jobId;
-    document.querySelectorAll('.stepJobSelect').forEach(sel => sel.value = jobId);
-    switchTab('tab-step5');
+    document.getElementById('jobsListCard').style.display = 'none';
+    document.getElementById('jobDetailContainer').style.display = 'block';
+    document.getElementById('detailJobIdText').innerText = jobId;
+    
+    // Move the step panes into the detail area if not already there
+    const stepsArea = document.getElementById('jobDetailStepsArea');
+    ['tab-step1', 'tab-step2', 'tab-step3', 'tab-step4', 'tab-step5'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el && el.parentNode !== stepsArea) {
+        stepsArea.appendChild(el);
+      }
+    });
+    
+    // Hide all step panes initially
+    document.querySelectorAll('.job-step-pane').forEach(el => el.style.display = 'none');
+    
     loadStepsData(jobId);
+    switchJobStepTab('tab-step1');
+  }
+  
+  function closeJobDetails() {
+    document.getElementById('jobsListCard').style.display = 'block';
+    document.getElementById('jobDetailContainer').style.display = 'none';
+  }
+  
+  function switchJobStepTab(tabId) {
+    // hide all job-step-panes
+    ['tab-step1', 'tab-step2', 'tab-step3', 'tab-step4', 'tab-step5'].forEach(id => {
+      const el = document.getElementById(id);
+      if(el) el.style.display = 'none';
+    });
+    // show active
+    const activeEl = document.getElementById(tabId);
+    if(activeEl) activeEl.style.display = 'block';
+    
+    // update buttons
+    ['btn-tab-step1', 'btn-tab-step2', 'btn-tab-step3', 'btn-tab-step4', 'btn-tab-step5'].forEach(id => {
+      const el = document.getElementById(id);
+      if(el) {
+        if(id === 'btn-' + tabId) el.classList.add('active');
+        else el.classList.remove('active');
+      }
+    });
   }
 
   function populateStepJobSelect() {
@@ -2053,12 +2040,26 @@
 
       // Render Step 2
       const s2 = d.step2 || {};
-      const elS2Raw = document.getElementById('step2RawCount');
-      const elS2Conc = document.getElementById('step2Concurrency');
-      const elS2Depth = document.getElementById('step2Depth');
-      if (elS2Raw) elS2Raw.innerText = s2.raw_count != null ? s2.raw_count + ' địa điểm' : '0 địa điểm';
-      if (elS2Conc) elS2Conc.innerText = s2.concurrency + ' luồng Playwright';
-      if (elS2Depth) elS2Depth.innerText = s2.depth + ' cuộn';
+      const rawPlaces = s2.raw_places || [];
+      const tbody2 = document.getElementById('step2TableBody');
+      if (tbody2) {
+        if (rawPlaces.length === 0) {
+          tbody2.innerHTML = '<tr><td colspan="5"><div class="empty-state"><div class="empty-state-icon">📝</div><p>Không có dữ liệu cào thô (hoặc dữ liệu đã bị dọn dẹp).</p></div></td></tr>';
+        } else {
+          tbody2.innerHTML = rawPlaces.map((p, idx) => `
+            <tr>
+              <td style="color:var(--text-dim);font-weight:700;">${idx + 1}</td>
+              <td style="font-weight:600;color:#fff;">${escHtml(p.title || '')}</td>
+              <td>${escHtml(p.category || '')}</td>
+              <td style="font-size:12px;">${escHtml(p.address || '')}</td>
+              <td style="font-size:12px;">
+                ${p.phone ? `<div>📞 ${escHtml(p.phone)}</div>` : ''}
+                ${p.website ? `<div>🌐 <a href="${escHtml(p.website)}" target="_blank" style="color:var(--accent);">Website</a></div>` : ''}
+              </td>
+            </tr>
+          `).join('');
+        }
+      }
 
       // Render Step 3
       const s3 = d.step3 || {};

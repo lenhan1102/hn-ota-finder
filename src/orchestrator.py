@@ -257,6 +257,19 @@ def execute_pipeline(
             pass
 
     raw_count = len(raw_places) if isinstance(raw_places, list) else 0
+    
+    # Lưu danh sách raw_places rút gọn vào intermediate để hiển thị trên UI
+    simplified_raw = []
+    if isinstance(raw_places, list):
+        for p in raw_places:
+            simplified_raw.append({
+                "title": p.get("title", "N/A"),
+                "category": p.get("category", ""),
+                "address": p.get("address", ""),
+                "website": p.get("website", ""),
+                "phone": p.get("phone", "")
+            })
+    
     if raw_count == 0:
         msg = (
             "Google Maps không trả về kết quả nào cho từ khoá này. "
@@ -318,6 +331,7 @@ def execute_pipeline(
             "intermediate": {
                 "queries": queries,
                 "raw_count": raw_count,
+                "raw_places": simplified_raw[:500], # Giới hạn 500 để tránh lag UI
                 "candidates_count": 0,
                 "excluded_count": excl_count,
                 "candidates": [],
@@ -381,7 +395,8 @@ def execute_pipeline(
         "intermediate": {
             "queries": queries,
             "raw_count": raw_count,
-            "candidates_count": cand_count,
+            "raw_places": simplified_raw,
+            "candidates_count": len(candidates),
             "excluded_count": excl_count,
             "candidates": candidates[:200],
             "excluded": excluded_records[:200],
