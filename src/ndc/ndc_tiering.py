@@ -83,6 +83,8 @@ COLS = ["domain", "real", "ota", "airline", "flightticketing", "onlinesearch",
 # QUY TAC TIER — day la "tieu chi" duoi dang code
 # ============================================================================
 def classify(r):
+    if getattr(r, "domain", "") == "-":
+        return "DROP", "Ứng viên không có website"
     if r.domain in PEERS:
         return "DROP", "Đối tác B2B / Wholesaler / Travel-tech (không phải đại lý bán vé lẻ cho khách)"
     if r.airline:

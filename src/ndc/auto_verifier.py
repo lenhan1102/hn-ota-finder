@@ -157,6 +157,8 @@ def run_auto_verification(
 
     unique_sites = []
     seen = set()
+    verdicts = []
+
     for _, row in df.iterrows():
         dom = norm_domain(row[domain_col])
         if dom and dom not in seen:
@@ -172,6 +174,24 @@ def run_auto_verification(
                 "name": name,
                 "category": category,
             })
+        elif not dom:
+            name = str(row.get("title") or "")
+            if name and name not in seen:
+                seen.add(name)
+                verdicts.append({
+                    "domain": "-",
+                    "real": 0,
+                    "ota": 0,
+                    "airline": 0,
+                    "flightticketing": 0,
+                    "onlinesearch": 0,
+                    "iata": 0,
+                    "iata_ev": "not found",
+                    "puretour": 0,
+                    "conf": 1.0,
+                    "evidence": "Ứng viên không có website (bị loại ở bước Thẩm định)",
+                    "reachable": 0,
+                })
 
     if max_sites > 0:
         unique_sites = unique_sites[:max_sites]
@@ -180,6 +200,12 @@ def run_auto_verification(
     print(f"  BẮT ĐẦU THẨM ĐỊNH {len(unique_sites)} WEBSITE BẰNG PLAYWRIGHT CHROMIUM")
     print(f"  Headless: {headless} (Cửa sổ trình duyệt: {'ẨN' if headless else 'HIỆN THỰC TẾ'})")
     print(f"{'='*70}")
+
+    if not unique_sites:
+        print("    Không có website nào để thẩm định. Bỏ qua bước Playwright.")
+        if progress_callback:
+            progress_callback(4, "Thẩm định website", 85, "Không có website nào để thẩm định bằng Playwright", inter_data={"verdicts": verdicts, "reverify": []})
+        return verdicts, []
 
     openai_key = os.getenv("OPENAI_API_KEY", "").strip()
     gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
@@ -192,10 +218,23 @@ def run_auto_verification(
         print("    Không có AI API Key -> Sử dụng thuật toán phân tích Playwright Offline")
 
     reverify_records = []
-    verdicts = []
 
     if sync_playwright is None:
         raise RuntimeError("Playwright chưa được cài đặt.")
+
+    def _fire_progress(idx, domain_str):
+        if progress_callback:
+            try:
+                import inspect
+                sig = inspect.signature(progress_callback)
+                pct = 70 + int((idx / len(unique_sites)) * 15)
+                msg = f"Đang thẩm định {idx}/{len(unique_sites)}: {domain_str}"
+                if 'inter_data' in sig.parameters:
+                    progress_callback(4, "Thẩm định website", pct, msg, inter_data={"verdicts": verdicts, "reverify": reverify_records})
+                else:
+                    progress_callback(4, "Thẩm định website", pct, msg)
+            except Exception:
+                pass
 
     with sync_playwright() as p:
         browser = p.chromium.launch(
@@ -241,6 +280,7 @@ def run_auto_verification(
                     "evidence": "Website đã chết (NXDOMAIN / Lỗi phân giải DNS)",
                     "reachable": 0,
                 })
+                _fire_progress(i, dom)
                 continue
 
             page = ctx.new_page()
@@ -319,6 +359,8 @@ def run_auto_verification(
                 print(f"          -> Chi tiết Form vé: {probe_res.get('flight_form_detail')}")
             if probe_res.get("iata_found"):
                 print(f"          -> Chi tiết IATA: {probe_res.get('iata_number') or 'Có'}")
+                
+            _fire_progress(i, dom)
 
         browser.close()
 
