@@ -85,6 +85,11 @@ COLS = ["domain", "real", "ota", "airline", "flightticketing", "onlinesearch",
 def classify(r):
     if getattr(r, "domain", "") == "-":
         return "DROP", "Ứng viên không có website"
+    
+    work_dom = norm_domain(getattr(r, "workurl", ""))
+    if work_dom in {"klook.com", "traveloka.com", "trip.com", "agoda.com", "booking.com", "expedia.com", "skyscanner.com", "kayak.com", "kkday.com"}:
+        return "DROP", f"Website thực tế là Mega-OTA/Nền tảng du lịch ({work_dom}) — chỉ là link affiliate hoặc không độc lập"
+        
     if r.domain in PEERS:
         return "DROP", "Đối tác B2B / Wholesaler / Travel-tech (không phải đại lý bán vé lẻ cho khách)"
     if r.airline:
