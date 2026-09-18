@@ -222,13 +222,13 @@ def run_auto_verification(
     if sync_playwright is None:
         raise RuntimeError("Playwright chưa được cài đặt.")
 
-    def _fire_progress(idx, domain_str):
+    def _fire_progress(idx, domain_str, detail=""):
         if progress_callback:
             try:
                 import inspect
                 sig = inspect.signature(progress_callback)
                 pct = 70 + int((idx / len(unique_sites)) * 15)
-                msg = f"Đang thẩm định {idx}/{len(unique_sites)}: {domain_str}"
+                msg = f"[Playwright] [{idx}/{len(unique_sites)}] {domain_str} {detail}".strip()
                 if 'inter_data' in sig.parameters:
                     progress_callback(4, "Thẩm định website", pct, msg, inter_data={"verdicts": verdicts, "reverify": reverify_records})
                 else:
@@ -280,7 +280,7 @@ def run_auto_verification(
                     "evidence": "Website đã chết (NXDOMAIN / Lỗi phân giải DNS)",
                     "reachable": 0,
                 })
-                _fire_progress(i, dom)
+                _fire_progress(i, dom, "-> Không thể phân giải DNS (NXDOMAIN)")
                 continue
 
             page = ctx.new_page()
@@ -360,7 +360,8 @@ def run_auto_verification(
             if probe_res.get("iata_found"):
                 print(f"          -> Chi tiết IATA: {probe_res.get('iata_number') or 'Có'}")
                 
-            _fire_progress(i, dom)
+            detail_tag = "-> Đạt chuẩn (Có bán vé)" if verdict.get("flightticketing") else ("-> Không đạt chuẩn (Không bán vé)" if probe_res.get("loaded") else f"-> Không thể truy cập ({probe_res.get('error', 'Timeout/Error')[:30]})")
+            _fire_progress(i, dom, detail_tag)
 
         browser.close()
 

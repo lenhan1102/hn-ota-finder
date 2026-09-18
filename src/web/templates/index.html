@@ -1472,6 +1472,9 @@
         }
 
         container.innerHTML = jobs.map(j => renderJobCard(j)).join('');
+        document.querySelectorAll('.log-box').forEach(box => {
+          box.scrollTop = box.scrollHeight;
+        });
       } catch (err) {
         console.error('Fetch jobs error:', err);
       }
@@ -1516,7 +1519,7 @@
         </button>
       `;
 
-      const logsText = (job.logs || []).slice(-8).join('\n');
+      const logsText = (job.logs || []).slice(-40).join('\n');
 
       let cancelBtn = "";
       if (isRunning || job.status === 'pending') {
@@ -1553,7 +1556,13 @@
             <strong>${percent}%</strong>
           </div>
 
-          ${logsText ? `<div class="log-box">${logsText}</div>` : ''}
+          ${logsText ? `
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:12px; margin-bottom:-6px;">
+              <span style="font-size:11px; color:var(--text-dim); font-weight:600;">📜 TIẾN TRÌNH & LOG PLAYWRIGHT (REAL-TIME):</span>
+              <span style="font-size:11px; color:var(--text-dim);">${(job.logs || []).length} logs</span>
+            </div>
+            <div class="log-box" id="logBox_${job.id}" style="max-height:180px; overflow-y:auto; white-space:pre-wrap;">${logsText}</div>
+          ` : ''}
         </div>
       `;
     }

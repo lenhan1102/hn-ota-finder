@@ -112,6 +112,8 @@ def run_job_task(job_id: str, payload: dict):
             job["percent"] = percent
             job["message"] = message
             job["logs"].append(f"[{t_str}] {message}")
+            if len(job["logs"]) > 500:
+                job["logs"] = job["logs"][-500:]
             if inter_data:
                 if job.get("intermediate") is None:
                     job["intermediate"] = {}

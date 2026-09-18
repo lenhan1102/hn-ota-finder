@@ -8,11 +8,14 @@
 
 import argparse
 import os
+import queue
 import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
+import urllib.parse
 from pathlib import Path
 
 # Add src to sys.path
@@ -193,29 +196,144 @@ def execute_pipeline(
         scraper_env["HOME"] = user_home
         scraper_env["PLAYWRIGHT_BROWSERS_PATH"] = os.path.join(user_home, ".cache", "ms-playwright")
         
-        process = subprocess.Popen(scraper_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=scraper_env)
-        
+        playwright_debug = os.getenv("PLAYWRIGHT_DEBUG", "").lower() in ["1", "true", "yes"]
+        if playwright_debug and "DEBUG" not in scraper_env:
+            scraper_env["DEBUG"] = os.getenv("DEBUG", "pw:browser*")
+
+        process = subprocess.Popen(
+            scraper_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            env=scraper_env
+        )
+
+        log_queue = queue.Queue()
+
+        def stream_reader(pipe, q):
+            try:
+                for line in iter(pipe.readline, ''):
+                    if not line:
+                        break
+                    q.put(line)
+            finally:
+                pipe.close()
+
+        reader_thread = threading.Thread(target=stream_reader, args=(process.stdout, log_queue), daemon=True)
+        reader_thread.start()
+
+        all_captured_logs = []
+        completed_jobs_count = 0
+        total_found_places = 0
+        last_ui_update_time = 0
+
         while True:
+            # 1. Kiểm tra yêu cầu huỷ từ người dùng
             if progress_callback:
                 try:
                     progress_callback(-1, "check_cancel", 0, "")
-                except Exception as e:
+                except Exception:
                     process.terminate()
-                    process.wait(timeout=5)
+                    try:
+                        process.wait(timeout=5)
+                    except Exception:
+                        process.kill()
                     raise
-            
+
+            # 2. Đọc tất cả dòng log đang có trong queue
+            while True:
+                try:
+                    raw_line = log_queue.get_nowait()
+                except queue.Empty:
+                    break
+
+                all_captured_logs.append(raw_line)
+                line_str = raw_line.strip()
+                if not line_str:
+                    continue
+
+                # Phân tích log từ scrapemate (JSON format)
+                if line_str.startswith("{") and line_str.endswith("}"):
+                    try:
+                        data = json.loads(line_str)
+                        msg = data.get("message", "")
+                        if msg == "starting scrapemate":
+                            out_msg = "Playwright đã khởi động, bắt đầu cào Google Maps..."
+                            print(f"    [Playwright] {out_msg}", flush=True)
+                            if progress_callback:
+                                progress_callback(2, "Cào dữ liệu Google Maps", 28, f"[Playwright] {out_msg}")
+                        elif "places found" in msg:
+                            m_cnt = re.search(r'(\d+)\s+places\s+found', msg)
+                            if m_cnt:
+                                total_found_places += int(m_cnt.group(1))
+                            out_msg = f"{msg} (Tổng phát hiện: {total_found_places} địa điểm)"
+                            print(f"    [Playwright] {out_msg}", flush=True)
+                            if progress_callback:
+                                progress_callback(2, "Cào dữ liệu Google Maps", 32, f"[Playwright] {out_msg}")
+                        elif msg == "job finished":
+                            completed_jobs_count += 1
+                            job_str = data.get("job", "")
+                            m_url = re.search(r'/maps/place/([^/]+)/', job_str)
+                            place_name = urllib.parse.unquote_plus(m_url.group(1)) if m_url else ""
+                            dur = data.get("duration", 0)
+                            dur_s = f"{dur/1000:.1f}s" if isinstance(dur, (int, float)) and dur > 1000 else f"{dur}ms"
+                            title_display = f"'{place_name}' " if place_name else ""
+                            out_msg = f"Đã cào địa điểm #{completed_jobs_count}: {title_display}({dur_s})"
+                            print(f"    [Playwright] {out_msg}", flush=True)
+
+                            now = time.time()
+                            if now - last_ui_update_time >= 1.2:
+                                last_ui_update_time = now
+                                pct = min(48, 30 + int(completed_jobs_count * 0.4))
+                                if progress_callback:
+                                    progress_callback(2, "Cào dữ liệu Google Maps", pct, f"[Playwright] {out_msg}")
+                        elif msg == "scrapemate stats":
+                            comp = data.get("numOfJobsCompleted", completed_jobs_count)
+                            speed = data.get("speed", "")
+                            out_msg = f"Tiến độ: {comp} địa điểm hoàn tất (Tốc độ: {speed})"
+                            print(f"    [Playwright] {out_msg}", flush=True)
+                            if progress_callback:
+                                progress_callback(2, "Cào dữ liệu Google Maps", min(49, 32 + int(comp * 0.4)), f"[Playwright] {out_msg}")
+                        elif msg == "scrapemate exited":
+                            out_msg = f"Hoàn thành cào dữ liệu Google Maps. Tổng cộng cào {completed_jobs_count} địa điểm."
+                            print(f"    [Playwright] {out_msg}", flush=True)
+                            if progress_callback:
+                                progress_callback(2, "Cào dữ liệu Google Maps", 50, f"[Playwright] {out_msg}")
+                    except Exception:
+                        if playwright_debug:
+                            print(f"    [Playwright] {line_str}", flush=True)
+                elif "INFO Downloading browsers" in line_str or "Downloaded browsers" in line_str:
+                    print(f"    [Playwright] {line_str}", flush=True)
+                    if progress_callback:
+                        progress_callback(2, "Cào dữ liệu Google Maps", 26, f"[Playwright] {line_str}")
+                elif "pw:browser" in line_str or "pw:api" in line_str:
+                    print(f"    [Playwright Debug] {line_str}", flush=True)
+                elif line_str.startswith("╔") or line_str.startswith("║") or line_str.startswith("╚"):
+                    pass
+                else:
+                    if playwright_debug or "error" in line_str.lower() or "warn" in line_str.lower():
+                        print(f"    [Scraper] {line_str}", flush=True)
+
             if process.poll() is not None:
+                reader_thread.join(timeout=2)
+                while not log_queue.empty():
+                    try:
+                        all_captured_logs.append(log_queue.get_nowait())
+                    except queue.Empty:
+                        break
                 break
-            time.sleep(1)
-            
-        stdout, stderr = process.communicate()
+
+            time.sleep(0.4)
+
+        full_output = "".join(all_captured_logs)
         class SubprocessResult:
-            def __init__(self, returncode, stdout, stderr):
+            def __init__(self, returncode, output):
                 self.returncode = returncode
-                self.stdout = stdout
-                self.stderr = stderr
-        scraper_res = SubprocessResult(process.returncode, stdout, stderr)
-        
+                self.stdout = output
+                self.stderr = output
+        scraper_res = SubprocessResult(process.returncode, full_output)
+
         print(f"    Cào dữ liệu hoàn tất trong {int(time.time() - t0)} giây.")
 
         if scraper_res.returncode != 0:
