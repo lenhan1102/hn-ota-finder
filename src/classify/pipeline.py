@@ -563,6 +563,7 @@ def run_pipeline(input_data, country: str, output_dir: str = None, return_exclud
             e_reason = str(e_row.get('exclusion_reason', ''))
             print(f"       [-] Bị loại [Bước 1]: {e_title:<35} | Lý do: {e_reason}")
             all_excluded_records.append({
+                'db_place_id': e_row.get('db_place_id'),
                 'title': "" if utils.pd_isna(e_row.get('title')) else str(e_row.get('title')),
                 'category': "" if utils.pd_isna(e_row.get('category')) else str(e_row.get('category')),
                 'website': "" if utils.pd_isna(e_row.get('website')) else str(e_row.get('website')),
@@ -606,6 +607,7 @@ def run_pipeline(input_data, country: str, output_dir: str = None, return_exclud
             reason_drop = "Không có tín hiệu bán vé máy bay hoặc đặt vé trực tuyến"
             print(f"       [-] LOẠI BỎ [Heuristic]: {title_str[:30]:<30} | Danh mục: {cat_str[:20]} | Website: {web_str[:25]} | Lý do: {reason_drop}")
             all_excluded_records.append({
+                'db_place_id': orig_row.get('db_place_id'),
                 'title': "" if utils.pd_isna(orig_row.get('title')) else str(orig_row.get('title')),
                 'category': "" if utils.pd_isna(orig_row.get('category')) else str(orig_row.get('category')),
                 'website': "" if utils.pd_isna(orig_row.get('website')) else str(orig_row.get('website')),
@@ -618,6 +620,7 @@ def run_pipeline(input_data, country: str, output_dir: str = None, return_exclud
         lat_val = orig_row.get('latitude')
         lng_val = orig_row.get('longitude')
         base_info = {
+            'db_place_id': orig_row.get('db_place_id'),
             'title': "" if utils.pd_isna(orig_row.get('title')) else str(orig_row.get('title')),
             'category': "" if utils.pd_isna(orig_row.get('category')) else str(orig_row.get('category')),
             'website': "" if utils.pd_isna(orig_row.get('website')) else str(orig_row.get('website')),

@@ -76,7 +76,7 @@ NAME_MAP = {
 }
 
 COLS = ["domain", "real", "ota", "airline", "flightticketing", "onlinesearch",
-        "iata", "iata_ev", "puretour", "conf", "evidence", "reachable"]
+        "iata", "iata_ev", "puretour", "conf", "evidence", "reachable", "db_place_id"]
 
 
 # ============================================================================
@@ -142,6 +142,7 @@ def load_verdicts(verdicts_input):
     recs = []
     for r in rows:
         recs.append({
+            "db_place_id": r.get("db_place_id"),
             "domain": norm_domain(r.get("domain", "")) or str(r.get("domain", "")).strip().lower(),
             "real": int(r.get("real", 0)),
             "ota": int(r.get("ota", 0)),
@@ -299,8 +300,8 @@ def write_xlsx(out, path):
                               "iata": "iata_visible"})
     qcols = ["name", "website", "site_reachable", "https_ok", "reason", "sells_air_tickets",
              "online_flight_search", "iata_visible", "iata_ev", "city", "phone", "emails",
-             "review_count", "conf", "gmaps_name", "evidence"]
-    dcols = ["reason", "name", "website", "conf", "gmaps_name", "evidence"]
+             "review_count", "conf", "gmaps_name", "evidence", "db_place_id"]
+    dcols = ["reason", "name", "website", "conf", "gmaps_name", "evidence", "db_place_id"]
     qual, drop = out[out.tier != "DROP"][qcols], out[out.tier == "DROP"][dcols]
 
     wb = build_leads_workbook(qual, drop)
@@ -340,8 +341,8 @@ def run_tiering(verdicts_data, country, output_json=None, output_xlsx=None, reve
                               "iata": "iata_visible"})
     qcols = ["name", "website", "site_reachable", "https_ok", "reason", "sells_air_tickets",
              "online_flight_search", "iata_visible", "iata_ev", "city", "phone", "emails",
-             "review_count", "conf", "gmaps_name", "evidence"]
-    dcols = ["reason", "name", "website", "conf", "gmaps_name", "evidence"]
+             "review_count", "conf", "gmaps_name", "evidence", "db_place_id"]
+    dcols = ["reason", "name", "website", "conf", "gmaps_name", "evidence", "db_place_id"]
     qual = out[out.tier != "DROP"][qcols]
     drop = out[out.tier == "DROP"][dcols]
 

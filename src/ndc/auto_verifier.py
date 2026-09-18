@@ -169,6 +169,7 @@ def run_auto_verification(
             name = str(row.get("title") or dom)
             category = str(row.get("category") or "")
             unique_sites.append({
+                "db_place_id": row.get("db_place_id"),
                 "domain": dom,
                 "url": raw_url,
                 "name": name,
@@ -179,6 +180,7 @@ def run_auto_verification(
             if name and name not in seen:
                 seen.add(name)
                 verdicts.append({
+                    "db_place_id": row.get("db_place_id"),
                     "domain": "-",
                     "real": 0,
                     "ota": 0,
@@ -267,6 +269,7 @@ def run_auto_verification(
                 }
                 reverify_records.append(probe_res)
                 verdicts.append({
+                    "db_place_id": item.get("db_place_id"),
                     "domain": dom,
                     "real": 0,
                     "ota": 0,
@@ -337,6 +340,7 @@ def run_auto_verification(
                 }
 
             verdict["reachable"] = 1 if probe_res.get("loaded") else 0
+            verdict["db_place_id"] = item.get("db_place_id")
             verdicts.append(verdict)
 
             title_p = probe_res.get("title", "")[:40]

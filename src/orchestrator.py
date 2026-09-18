@@ -28,6 +28,16 @@ from classify.pipeline import run_pipeline
 from ndc.auto_verifier import run_auto_verification
 from ndc.ndc_tiering import run_tiering
 
+from db.queries import (
+    create_search_job,
+    update_job_status,
+    insert_search_queries,
+    insert_scraped_places,
+    mark_places_excluded,
+    insert_place_verdicts,
+    insert_final_leads
+)
+
 
 def print_banner():
     print("=" * 80)
@@ -80,6 +90,16 @@ def execute_pipeline(
     timestamp_str = time.strftime("%Y%m%d_%H%M%S")
     final_json = out_dir / f"{task_name}_leads_{timestamp_str}.json"
     excel_virtual_name = f"{task_name}_ndc_leads_{timestamp_str}.xlsx"
+
+    job_id = create_search_job(
+        country=country_key,
+        custom_keywords=custom_keywords,
+        lang=lang,
+        depth=depth,
+        concurrency=concurrency,
+        max_sites=max_sites,
+        market_type=market_type
+    )
 
     # -------------------------------------------------------------------------
     # BƯỚC 1: SINH DANH SÁCH TỪ KHOÁ (QUERIES)
@@ -135,6 +155,9 @@ def execute_pipeline(
                 f"flight booking in {country_key}",
             ]
             print(f"    Chưa có cấu hình sẵn cho {country_key}, sử dụng {len(queries)} từ khoá mặc định.")
+
+    if job_id and queries:
+        insert_search_queries(job_id, queries)
 
     update_progress(1, "Sinh danh sách từ khoá", 20, f"Đã sinh xong {len(queries)} từ khoá: {queries}", inter_data={"queries": queries})
 
@@ -362,6 +385,13 @@ def execute_pipeline(
                                 except Exception:
                                     pass
             print(f"    Đọc thành công {len(raw_places)} địa điểm từ Google Maps vào bộ nhớ (In-Memory).")
+            
+            # Luu vao CSDL ngay sau khi cao
+            if job_id and raw_places:
+                place_ids = insert_scraped_places(job_id, raw_places)
+                for i, p in enumerate(raw_places):
+                    if i < len(place_ids):
+                        p["db_place_id"] = place_ids[i]
 
         if not raw_places and scraper_res.returncode != 0:
             raise RuntimeError(
@@ -403,6 +433,8 @@ def execute_pipeline(
         )
         update_progress(2, "Cào dữ liệu Google Maps", 50, f"[CẢNH BÁO] {msg}")
         update_progress(5, "Hoàn tất", 100, f"Không có kết quả. {msg}")
+        if job_id:
+            update_job_status(job_id, "failed", msg)
         return {
             "country": country_key,
             "task_name": task_name,
@@ -434,6 +466,15 @@ def execute_pipeline(
     cand_count = len(candidates)
     excl_count = len(excluded_records)
     print(f"    [BƯỚC 3 KẾT QUẢ] Sau lọc Heuristic còn lại {cand_count} ứng viên đủ điều kiện thẩm định (Đã lọc bỏ: {excl_count}).")
+    
+    if job_id and excluded_records:
+        excluded_data = []
+        for er in excluded_records:
+            if er.get("db_place_id"):
+                excluded_data.append((er.get("db_place_id"), er.get("exclusion_reason", "Heuristic filter")))
+        if excluded_data:
+            mark_places_excluded(excluded_data)
+
     update_progress(3, "Lọc rác sơ bộ & Heuristic", 65, f"Xong lọc rác. Còn {cand_count} ứng viên.", inter_data={"candidates_count": cand_count, "excluded_count": excl_count, "candidates": candidates, "excluded": excluded_records[:200]})
 
     if cand_count == 0:
@@ -441,6 +482,8 @@ def execute_pipeline(
         print(f"    [CẢNH BÁO] {msg}")
         update_progress(3, "Lọc rác sơ bộ & Heuristic", 65, msg)
         update_progress(5, "Hoàn tất", 100, "Không có ứng viên nào vượt qua bước lọc Heuristic.")
+        if job_id:
+            update_job_status(job_id, "completed", "Không có ứng viên nào vượt qua lọc Heuristic.")
         return {
             "country": country_key,
             "task_name": task_name,
@@ -478,6 +521,9 @@ def execute_pipeline(
     )
     v_count = len(verdicts)
     update_progress(4, "Thẩm định website", 85, f"Đã thẩm định xong {v_count} website ứng viên.", inter_data={"verdicts": verdicts, "reverify": reverify_records})
+    
+    if job_id and verdicts:
+        insert_place_verdicts(verdicts)
 
     # -------------------------------------------------------------------------
     # BƯỚC 5: PHÂN TIER & XUẤT JSON KẾT QUẢ DUY NHẤT (KHÔNG TẠO EXCEL TĨNH)
@@ -497,6 +543,20 @@ def execute_pipeline(
         output_json=str(final_json),
         output_xlsx=None,  # Không lưu Excel tĩnh trên đĩa
     )
+    
+    if job_id:
+        all_leads = []
+        for l in leads_data.get("qualified_leads", []):
+            l["tier"] = l.get("tier", "Tier 1")
+            l["dropped_reason"] = ""
+            all_leads.append(l)
+        for l in leads_data.get("dropped_leads", []):
+            l["tier"] = "Dropped"
+            l["dropped_reason"] = l.get("reason", "Unknown drop reason")
+            all_leads.append(l)
+        if all_leads:
+            insert_final_leads(all_leads)
+        update_job_status(job_id, "completed")
 
     update_progress(5, "Hoàn tất", 100, f"Hoàn tất phân Tier! Đã tạo danh sách ({len(qual)} đại lý đạt chuẩn, {len(drop)} đơn vị bị loại)")
     print("=" * 80)
