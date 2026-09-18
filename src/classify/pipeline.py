@@ -186,8 +186,10 @@ def extract_features(df: pd.DataFrame, country: str) -> pd.DataFrame:
         feat['category_lower'] = str(row.get('category', '')).lower()
 
         # --- Review stats ---
-        feat['review_count'] = int(row.get('review_count', 0) or 0)
-        feat['review_rating'] = float(row.get('review_rating', 0) or 0)
+        rc = row.get('review_count')
+        feat['review_count'] = 0 if utils.pd_isna(rc) else int(float(rc))
+        rr = row.get('review_rating')
+        feat['review_rating'] = 0.0 if utils.pd_isna(rr) else float(rr)
 
         # --- Recent activity (check review dates) ---
         review_dates = utils.extract_review_dates(row.get('user_reviews'))
@@ -561,12 +563,12 @@ def run_pipeline(input_data, country: str, output_dir: str = None, return_exclud
             e_reason = str(e_row.get('exclusion_reason', ''))
             print(f"       [-] Bị loại [Bước 1]: {e_title:<35} | Lý do: {e_reason}")
             all_excluded_records.append({
-                'title': e_row.get('title', ''),
-                'category': e_row.get('category', ''),
-                'website': e_row.get('website', ''),
-                'phone': e_row.get('phone', ''),
-                'emails': e_row.get('emails', ''),
-                'address': e_row.get('address', ''),
+                'title': "" if utils.pd_isna(e_row.get('title')) else str(e_row.get('title')),
+                'category': "" if utils.pd_isna(e_row.get('category')) else str(e_row.get('category')),
+                'website': "" if utils.pd_isna(e_row.get('website')) else str(e_row.get('website')),
+                'phone': "" if utils.pd_isna(e_row.get('phone')) else str(e_row.get('phone')),
+                'emails': "" if utils.pd_isna(e_row.get('emails')) else str(e_row.get('emails')),
+                'address': "" if utils.pd_isna(e_row.get('address')) else str(e_row.get('address')),
                 'exclusion_reason': e_reason,
             })
 
@@ -604,29 +606,31 @@ def run_pipeline(input_data, country: str, output_dir: str = None, return_exclud
             reason_drop = "Không có tín hiệu bán vé máy bay hoặc đặt vé trực tuyến"
             print(f"       [-] LOẠI BỎ [Heuristic]: {title_str[:30]:<30} | Danh mục: {cat_str[:20]} | Website: {web_str[:25]} | Lý do: {reason_drop}")
             all_excluded_records.append({
-                'title': orig_row.get('title', ''),
-                'category': orig_row.get('category', ''),
-                'website': orig_row.get('website', ''),
-                'phone': orig_row.get('phone', ''),
-                'emails': orig_row.get('emails', ''),
-                'address': orig_row.get('address', ''),
+                'title': "" if utils.pd_isna(orig_row.get('title')) else str(orig_row.get('title')),
+                'category': "" if utils.pd_isna(orig_row.get('category')) else str(orig_row.get('category')),
+                'website': "" if utils.pd_isna(orig_row.get('website')) else str(orig_row.get('website')),
+                'phone': "" if utils.pd_isna(orig_row.get('phone')) else str(orig_row.get('phone')),
+                'emails': "" if utils.pd_isna(orig_row.get('emails')) else str(orig_row.get('emails')),
+                'address': "" if utils.pd_isna(orig_row.get('address')) else str(orig_row.get('address')),
                 'exclusion_reason': f"Heuristic: {reason_drop}",
             })
 
+        lat_val = orig_row.get('latitude')
+        lng_val = orig_row.get('longitude')
         base_info = {
-            'title': orig_row.get('title', ''),
-            'category': orig_row.get('category', ''),
-            'website': orig_row.get('website', ''),
-            'phone': orig_row.get('phone', ''),
-            'emails': orig_row.get('emails', ''),
-            'address': orig_row.get('address', ''),
-            'city': feat['city'],
-            'state': feat['state'],
+            'title': "" if utils.pd_isna(orig_row.get('title')) else str(orig_row.get('title')),
+            'category': "" if utils.pd_isna(orig_row.get('category')) else str(orig_row.get('category')),
+            'website': "" if utils.pd_isna(orig_row.get('website')) else str(orig_row.get('website')),
+            'phone': "" if utils.pd_isna(orig_row.get('phone')) else str(orig_row.get('phone')),
+            'emails': "" if utils.pd_isna(orig_row.get('emails')) else str(orig_row.get('emails')),
+            'address': "" if utils.pd_isna(orig_row.get('address')) else str(orig_row.get('address')),
+            'city': "" if utils.pd_isna(feat['city']) else str(feat['city']),
+            'state': "" if utils.pd_isna(feat['state']) else str(feat['state']),
             'review_count': feat['review_count'],
             'review_rating': feat['review_rating'],
-            'latitude': orig_row.get('latitude', ''),
-            'longitude': orig_row.get('longitude', ''),
-            'google_maps_link': orig_row.get('link', ''),
+            'latitude': 0.0 if utils.pd_isna(lat_val) else float(lat_val),
+            'longitude': 0.0 if utils.pd_isna(lng_val) else float(lng_val),
+            'google_maps_link': "" if utils.pd_isna(orig_row.get('link')) else str(orig_row.get('link')),
             'has_proper_website': feat['is_proper_domain'],
             'online_appointments': feat['online_appointments'],
             'accepts_credit_cards': feat['credit_cards'],
@@ -714,7 +718,7 @@ def run_pipeline(input_data, country: str, output_dir: str = None, return_exclud
 
         if not excluded_df.empty:
             excl_cols = ['title', 'category', 'website', 'review_count', 'review_rating', 'exclusion_reason']
-            excl_records = excluded_df[[c for c in excl_cols if c in excluded_df.columns]].to_dict(orient='records')
+            excl_records = excluded_df[[c for c in excl_cols if c in excluded_df.columns]].fillna("").to_dict(orient='records')
             with open(excluded_path, 'w', encoding='utf-8') as f:
                 json.dump(excl_records, f, ensure_ascii=False, indent=2)
 

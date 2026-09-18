@@ -1,5 +1,6 @@
 import io
 import json
+import math
 import os
 import shutil
 import sys
@@ -24,10 +25,43 @@ from queries import COUNTRY_CONFIGS
 from orchestrator import execute_pipeline
 from ndc.ndc_tiering import export_leads_to_excel_buffer
 
+
+def sanitize_for_json(obj):
+    """
+    Đệ quy làm sạch dữ liệu để đảm bảo 100% tuân thủ chuẩn JSON.
+    Thay thế mọi float('nan'), float('inf'), -float('inf') bằng None (null trong JSON).
+    """
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+    elif isinstance(obj, dict):
+        return {k: sanitize_for_json(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [sanitize_for_json(v) for v in obj]
+    return obj
+
+
+class SafeJSONResponse(JSONResponse):
+    """
+    JSONResponse an toàn: tự động lọc bỏ mọi giá trị NaN / Infinity
+    trước khi serialize bằng json.dumps(allow_nan=False).
+    """
+    def render(self, content: any) -> bytes:
+        return json.dumps(
+            sanitize_for_json(content),
+            ensure_ascii=False,
+            allow_nan=False,
+            indent=None,
+            separators=(",", ":"),
+        ).encode("utf-8")
+
+
 app = FastAPI(
     title="Google Maps Scraper - NDC Leads & OTA Finder",
     description="Giao dien quan ly va tim kiem dai ly ban ve may bay & OTA",
     version="1.0.0",
+    default_response_class=SafeJSONResponse,
 )
 
 OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR", BASE_DIR / "output"))
@@ -81,7 +115,7 @@ def run_job_task(job_id: str, payload: dict):
             if inter_data:
                 if job.get("intermediate") is None:
                     job["intermediate"] = {}
-                job["intermediate"].update(inter_data)
+                job["intermediate"].update(sanitize_for_json(inter_data))
 
     keywords_list = []
     if payload.get("custom_keywords"):
@@ -103,12 +137,13 @@ def run_job_task(job_id: str, payload: dict):
             headless=payload.get("headless", True),
             progress_callback=on_progress,
         )
+        safe_res = sanitize_for_json(res)
         job["status"] = "completed"
         job["percent"] = 100
         job["finished_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        job["result"] = res
-        job["leads_data"] = res.get("leads_data", {})
-        job["intermediate"] = res.get("intermediate", {})
+        job["result"] = safe_res
+        job["leads_data"] = safe_res.get("leads_data", {})
+        job["intermediate"] = safe_res.get("intermediate", {})
     except Exception as e:
         t_err = time.strftime("%H:%M:%S")
         job["status"] = "failed"
@@ -361,7 +396,7 @@ async def get_job_debug_files(job_id: str):
             "filename": "step3_candidates.json",
             "type": "json",
             "rows": cand_count,
-            "size_human": format_bytes(len(json.dumps(candidates))),
+            "size_human": format_bytes(len(json.dumps(sanitize_for_json(candidates)))),
             "download_url": f"/api/jobs/{job_id}/debug/download/step3_candidates.json"
         })
 
@@ -375,7 +410,7 @@ async def get_job_debug_files(job_id: str):
             "filename": "step3_excluded.json",
             "type": "json",
             "rows": excl_count,
-            "size_human": format_bytes(len(json.dumps(excluded))),
+            "size_human": format_bytes(len(json.dumps(sanitize_for_json(excluded)))),
             "download_url": f"/api/jobs/{job_id}/debug/download/step3_excluded.json"
         })
 
@@ -388,7 +423,7 @@ async def get_job_debug_files(job_id: str):
             "filename": "step4_verdicts.json",
             "type": "json",
             "rows": len(verdicts),
-            "size_human": format_bytes(len(json.dumps(verdicts))),
+            "size_human": format_bytes(len(json.dumps(sanitize_for_json(verdicts)))),
             "download_url": f"/api/jobs/{job_id}/debug/download/step4_verdicts.json"
         })
 
@@ -401,7 +436,7 @@ async def get_job_debug_files(job_id: str):
             "filename": "step4_reverify.json",
             "type": "json",
             "rows": len(reverify),
-            "size_human": format_bytes(len(json.dumps(reverify))),
+            "size_human": format_bytes(len(json.dumps(sanitize_for_json(reverify)))),
             "download_url": f"/api/jobs/{job_id}/debug/download/step4_reverify.json"
         })
 
@@ -415,7 +450,7 @@ async def get_job_debug_files(job_id: str):
             "filename": "step5_final_leads.json",
             "type": "json",
             "rows": qual_count + drop_count,
-            "size_human": format_bytes(len(json.dumps(leads))),
+            "size_human": format_bytes(len(json.dumps(sanitize_for_json(leads)))),
             "download_url": f"/api/jobs/{job_id}/debug/download/step5_final_leads.json"
         })
 
@@ -496,31 +531,31 @@ async def view_debug_file(job_id: str, filename: str):
 
     if filename == "step1_queries.txt":
         queries = inter.get("queries") or []
-        return JSONResponse({"type": "text", "content": "\n".join(queries), "filename": filename})
+        return SafeJSONResponse({"type": "text", "content": "\n".join(queries), "filename": filename})
 
     elif filename == "step2_raw_summary.txt":
         raw_count = inter.get("raw_count", 0)
         content = f"Google Maps cào được {raw_count} địa điểm thô.\nDữ liệu được xử lý trực tiếp trên RAM và giải phóng ngay để tối ưu dung lượng server."
-        return JSONResponse({"type": "text", "content": content, "filename": filename})
+        return SafeJSONResponse({"type": "text", "content": content, "filename": filename})
 
     elif filename == "step3_candidates.json":
         cand = inter.get("candidates") or []
-        return JSONResponse({"type": "json", "data": cand, "filename": filename})
+        return SafeJSONResponse({"type": "json", "data": cand, "filename": filename})
 
     elif filename == "step3_excluded.json":
         excl = inter.get("excluded") or []
-        return JSONResponse({"type": "json", "data": excl, "filename": filename})
+        return SafeJSONResponse({"type": "json", "data": excl, "filename": filename})
 
     elif filename == "step4_verdicts.json":
         verdicts = inter.get("verdicts") or []
-        return JSONResponse({"type": "json", "data": verdicts, "filename": filename})
+        return SafeJSONResponse({"type": "json", "data": verdicts, "filename": filename})
 
     elif filename == "step4_reverify.json":
         reverify = inter.get("reverify") or []
-        return JSONResponse({"type": "json", "data": reverify, "filename": filename})
+        return SafeJSONResponse({"type": "json", "data": reverify, "filename": filename})
 
     elif filename == "step5_final_leads.json":
-        return JSONResponse({"type": "json", "data": leads, "filename": filename})
+        return SafeJSONResponse({"type": "json", "data": leads, "filename": filename})
 
     raise HTTPException(status_code=404, detail=f"Không tìm thấy dữ liệu cho {filename}")
 
@@ -546,27 +581,28 @@ async def download_debug_file(job_id: str, filename: str):
         return StreamingResponse(buf, media_type="text/plain", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
     elif filename == "step3_candidates.json":
-        cand = inter.get("candidates") or []
+        cand = sanitize_for_json(inter.get("candidates") or [])
         buf = io.BytesIO(json.dumps(cand, ensure_ascii=False, indent=2).encode("utf-8"))
         return StreamingResponse(buf, media_type="application/json", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
     elif filename == "step3_excluded.json":
-        excl = inter.get("excluded") or []
+        excl = sanitize_for_json(inter.get("excluded") or [])
         buf = io.BytesIO(json.dumps(excl, ensure_ascii=False, indent=2).encode("utf-8"))
         return StreamingResponse(buf, media_type="application/json", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
     elif filename == "step4_verdicts.json":
-        verdicts = inter.get("verdicts") or []
+        verdicts = sanitize_for_json(inter.get("verdicts") or [])
         buf = io.BytesIO(json.dumps(verdicts, ensure_ascii=False, indent=2).encode("utf-8"))
         return StreamingResponse(buf, media_type="application/json", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
     elif filename == "step4_reverify.json":
-        reverify = inter.get("reverify") or []
+        reverify = sanitize_for_json(inter.get("reverify") or [])
         buf = io.BytesIO(json.dumps(reverify, ensure_ascii=False, indent=2).encode("utf-8"))
         return StreamingResponse(buf, media_type="application/json", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
     elif filename == "step5_final_leads.json":
-        buf = io.BytesIO(json.dumps(leads, ensure_ascii=False, indent=2).encode("utf-8"))
+        safe_leads = sanitize_for_json(leads)
+        buf = io.BytesIO(json.dumps(safe_leads, ensure_ascii=False, indent=2).encode("utf-8"))
         return StreamingResponse(buf, media_type="application/json", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
     raise HTTPException(status_code=404, detail=f"Không tìm thấy dữ liệu cho {filename}")

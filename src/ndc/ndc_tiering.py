@@ -128,7 +128,7 @@ def norm_domain(u):
 
 def load_verdicts(verdicts_input):
     if isinstance(verdicts_input, pd.DataFrame):
-        rows = verdicts_input.to_dict(orient="records")
+        rows = verdicts_input.fillna("").to_dict(orient="records")
     elif isinstance(verdicts_input, list):
         rows = verdicts_input
     else:
@@ -357,6 +357,16 @@ def run_tiering(verdicts_data, country, output_json=None, output_xlsx=None, reve
             print(f"       [+] ĐẠT CHUẨN [{tier_val}]: {name_val:<32} | Domain: {dom_val} | Lý do: {reason_val}")
 
     from datetime import datetime
+
+    def clean_records_for_json(df_obj):
+        clean_df = df_obj.copy().fillna("")
+        records = clean_df.to_dict(orient="records")
+        for r in records:
+            for k, v in r.items():
+                if pd.isna(v):
+                    r[k] = ""
+        return records
+
     leads_data = {
         "country": country,
         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -365,8 +375,8 @@ def run_tiering(verdicts_data, country, output_json=None, output_xlsx=None, reve
             "dropped_count": len(drop),
             "total_leads": len(qual) + len(drop),
         },
-        "qualified_leads": qual.to_dict(orient="records"),
-        "dropped_leads": drop.to_dict(orient="records"),
+        "qualified_leads": clean_records_for_json(qual),
+        "dropped_leads": clean_records_for_json(drop),
     }
 
     if output_json:
