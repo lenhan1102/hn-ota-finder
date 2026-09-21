@@ -31,6 +31,7 @@ from ndc.ndc_tiering import run_tiering
 from db.queries import (
     create_search_job,
     update_job_status,
+    update_job_progress,
     insert_search_queries,
     insert_scraped_places,
     mark_places_excluded,
@@ -64,12 +65,22 @@ def execute_pipeline(
     skip_scrape: bool = False,
     headless: bool = True,
     progress_callback=None,
+    job_id: str = None,
 ) -> dict:
     import tempfile
     import json
 
     def update_progress(stage: int, stage_name: str, percent: int, message: str, inter_data: dict = None):
         print(f"[{stage}/5] ({percent}%) {stage_name}: {message}")
+        if job_id:
+            try:
+                update_job_progress(
+                    job_id, stage, stage_name, percent, message,
+                    log_line=f"[{time.strftime('%H:%M:%S')}] {message}"
+                )
+            except Exception as ex:
+                print(f"    [WARN] DB progress update error: {ex}")
+
         if progress_callback:
             try:
                 import inspect
@@ -91,6 +102,7 @@ def execute_pipeline(
     final_json = out_dir / f"{task_name}_leads_{timestamp_str}.json"
     excel_virtual_name = f"{task_name}_ndc_leads_{timestamp_str}.xlsx"
 
+    # Tạo hoặc đồng bộ job trong DB
     job_id = create_search_job(
         country=country_key,
         custom_keywords=custom_keywords,
@@ -98,7 +110,8 @@ def execute_pipeline(
         depth=depth,
         concurrency=concurrency,
         max_sites=max_sites,
-        market_type=market_type
+        market_type=market_type,
+        job_id=job_id
     )
 
     # -------------------------------------------------------------------------
@@ -554,9 +567,13 @@ def execute_pipeline(
             l["tier"] = "Dropped"
             l["dropped_reason"] = l.get("reason", "Unknown drop reason")
             all_leads.append(l)
-        if all_leads:
-            insert_final_leads(all_leads)
-        update_job_status(job_id, "completed")
+        leads_summary = {
+            "qualified_count": len(qual),
+            "dropped_count": len(drop),
+            "total_leads": len(qual) + len(drop),
+            "excel_filename": excel_virtual_name,
+        }
+        update_job_status(job_id, "completed", leads_summary=leads_summary)
 
     update_progress(5, "Hoàn tất", 100, f"Hoàn tất phân Tier! Đã tạo danh sách ({len(qual)} đại lý đạt chuẩn, {len(drop)} đơn vị bị loại)")
     print("=" * 80)
