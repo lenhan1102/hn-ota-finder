@@ -573,3 +573,19 @@ def get_job_leads_for_excel_from_db(job_id):
         "dropped_leads": steps_data["step5"]["dropped_leads"],
         "summary": steps_data["step5"]["summary"]
     }
+
+
+def delete_search_job(job_id: str) -> bool:
+    """Xoá một Job tìm kiếm khỏi Database MySQL (ON DELETE CASCADE sẽ xoá bảng con)."""
+    if not job_id:
+        return False
+    query = "DELETE FROM search_jobs WHERE id = %s;"
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (str(job_id),))
+            conn.commit()
+            return True
+    except Exception as e:
+        print(f"Lỗi xoá search job trong DB: {e}")
+        return False

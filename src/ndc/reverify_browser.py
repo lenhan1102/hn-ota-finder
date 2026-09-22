@@ -291,7 +291,9 @@ def probe(page, url, timeout_ms: int = 8000):
             import os
             title_lower = title.lower()
             body_lower = body.lower()
-            if any(k in title_lower for k in ["just a moment", "cloudflare", "attention required", "access denied", "403 forbidden", "security challenge"]) or "cf-browser-verification" in body_lower or "captcha" in body_lower:
+            _block_keywords_title = ["just a moment", "cloudflare", "attention required", "access denied", "403 forbidden", "security challenge"]
+            _block_keywords_body  = ["cf-browser-verification", "captcha", "enable javascript and cookies", "checking your browser"]
+            if any(k in title_lower for k in _block_keywords_title) or any(k in body_lower for k in _block_keywords_body):
                 try:
                     os.makedirs("debug_screenshots", exist_ok=True)
                     safe_domain = u.replace("https://", "").replace("http://", "").replace("/", "_").replace(":", "_")
@@ -300,9 +302,44 @@ def probe(page, url, timeout_ms: int = 8000):
                     print(f"\n[PHÁT HIỆN CHẶN/CAPTCHA] Đã chụp ảnh màn hình lưu tại: {screenshot_path}")
                 except Exception as ex:
                     print(f"\n[LỖI CHỤP ẢNH] Không thể chụp ảnh màn hình cho {u}: {ex}")
+                # Dừng lại ngay — không phân tích trang block vì sẽ cho kết quả sai
+                return {
+                    "loaded": False,
+                    "error": f"Bot/Cloudflare block (title: '{title[:60]}')",
+                    "final_url": page.url,
+                    "status": resp.status if resp else None,
+                    "title": title[:120],
+                }
 
             if not title and len(body) < 40:
                 continue  # render rong -> thu bien the tiep theo
+
+            # Phát hiện trang lỗi server kỹ thuật (PHP error, WordPress crash, maintenance...)
+            # → loaded=False để ngăn LLM phân loại sai dựa vào tên domain
+            _server_error_patterns = [
+                "your server is running php version",       # WordPress PHP incompatible
+                "wordpress requires at least php",
+                "fatal error",                              # PHP fatal error
+                "parse error",                              # PHP parse error
+                "site is undergoing maintenance",           # WordPress maintenance mode
+                "briefly unavailable for scheduled maintenance",
+                "error establishing a database connection", # WordPress DB error
+                "database error",
+                "this site can't be reached",
+                "http error 500",
+            ]
+            if any(p in body_lower for p in _server_error_patterns):
+                err_reason = next(p for p in _server_error_patterns if p in body_lower)
+                print(f"\n[PHÁT HIỆN LỖI SERVER] {u}: '{err_reason[:60]}'")
+                return {
+                    "loaded": False,
+                    "error": f"Server error ('{err_reason[:60]}')",
+                    "final_url": page.url,
+                    "status": resp.status if resp else None,
+                    "title": title[:120],
+                    "snippet": body[:200].replace("\n", " "),
+                }
+
             full, basic, detail = check_flight_form(page)
             m = IATA_NUM.search(body.replace("\n", " "))
             return {"loaded": True, "final_url": page.url,

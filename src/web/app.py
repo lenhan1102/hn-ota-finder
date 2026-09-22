@@ -32,6 +32,7 @@ from db.queries import (
     get_search_job,
     get_job_steps_data_from_db,
     get_job_leads_for_excel_from_db,
+    delete_search_job,
 )
 
 
@@ -279,6 +280,21 @@ async def cancel_job(job_id: str):
         print(f"Warn: Khong the update job cancel trong DB: {e}")
 
     return {"status": "success", "message": "Đã gửi yêu cầu huỷ"}
+
+
+
+@app.delete("/api/jobs/{job_id}")
+async def delete_job_endpoint(job_id: str):
+    """Xoá một Job khỏi RAM và Database MySQL."""
+    if job_id in JOBS:
+        JOBS.pop(job_id, None)
+
+    try:
+        delete_search_job(job_id)
+    except Exception as e:
+        print(f"Warn: Khong the xoa job trong DB: {e}")
+
+    return {"status": "success", "message": f"Đã xoá job {job_id} thành công"}
 
 
 @app.get("/api/jobs")

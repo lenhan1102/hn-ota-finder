@@ -41,9 +41,12 @@ from db.queries import (
 
 
 def print_banner():
-    print("=" * 80)
-    print("       GOOGLE MAPS SCRAPER & NDC LEADS FINDER (ALL-IN-ONE)")
-    print("=" * 80)
+    try:
+        print("=" * 80)
+        print("       GOOGLE MAPS SCRAPER & NDC LEADS FINDER (ALL-IN-ONE)")
+        print("=" * 80)
+    except OSError:
+        pass
 
 
 def sanitize_filename(name: str) -> str:
@@ -71,7 +74,10 @@ def execute_pipeline(
     import json
 
     def update_progress(stage: int, stage_name: str, percent: int, message: str, inter_data: dict = None):
-        print(f"[{stage}/5] ({percent}%) {stage_name}: {message}")
+        try:
+            print(f"[{stage}/5] ({percent}%) {stage_name}: {message}", flush=True)
+        except OSError:
+            pass
         if job_id:
             try:
                 update_job_progress(

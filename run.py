@@ -11,6 +11,31 @@ try:
     resource.setrlimit(resource.RLIMIT_NOFILE, (hard, hard))
 except Exception:
     pass
+class SafeStream:
+    """Bọc an toàn cho stdout/stderr chống crash khi TTY bị đóng ([Errno 5] EIO)"""
+    def __init__(self, target):
+        self._target = target
+
+    def write(self, s):
+        try:
+            return self._target.write(s)
+        except OSError:
+            return len(s)
+
+    def flush(self):
+        try:
+            return self._target.flush()
+        except OSError:
+            pass
+
+    def __getattr__(self, name):
+        return getattr(self._target, name)
+
+if sys.stdout:
+    sys.stdout = SafeStream(sys.stdout)
+if sys.stderr:
+    sys.stderr = SafeStream(sys.stderr)
+
 from pathlib import Path
 import uvicorn
 try:
