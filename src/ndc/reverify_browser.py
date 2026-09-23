@@ -281,7 +281,18 @@ def probe(page, url, timeout_ms: int = 7000):
 
     # Chan tai hinh anh, media, fonts de tang toc 3-5 lan va tranh ngam bo nho
     try:
-        page.route("**/*", lambda route: route.abort() if route.request.resource_type in ["image", "media", "font"] else route.continue_())
+        def _route_filter(route):
+            try:
+                if route.request.resource_type in ["image", "media", "font"]:
+                    route.abort()
+                else:
+                    route.continue_()
+            except Exception:
+                try:
+                    route.continue_()
+                except Exception:
+                    pass
+        page.route("**/*", _route_filter)
     except Exception:
         pass
 
@@ -303,6 +314,11 @@ def probe(page, url, timeout_ms: int = 7000):
             except Exception:
                 pass
             time.sleep(0.5)
+
+            curr_url = (page.url or "").lower()
+            if "chromewebdata" in curr_url or "chrome-error" in curr_url:
+                continue
+
             title = (page.title() or "").strip()
             try:
                 body = (page.inner_text("body") or "")[:7000]
@@ -372,8 +388,8 @@ def probe(page, url, timeout_ms: int = 7000):
         except Exception as e:
             err_str = str(e)
             last = err_str[:120]
-            # Neu loi DNS, tu choi ket noi hoac certificate loi thi dung ngay
-            if any(k in err_str for k in ["ERR_NAME_NOT_RESOLVED", "ERR_CONNECTION_REFUSED", "NXDOMAIN", "ERR_ADDRESS_UNREACHABLE", "ERR_CONNECTION_RESET", "ERR_CERT_"]):
+            # Neu loi DNS, tu choi ket noi, certificate loi hoac HTTP/2 protocol loi thi dung ngay
+            if any(k in err_str for k in ["ERR_NAME_NOT_RESOLVED", "ERR_CONNECTION_REFUSED", "NXDOMAIN", "ERR_ADDRESS_UNREACHABLE", "ERR_CONNECTION_RESET", "ERR_CERT_", "ERR_HTTP2_", "ERR_SSL_"]):
                 break
             # Neu bien the thu hai tro di ma bi timeout thi bo qua ngay de tiet kiem thoi gian
             if "timeout" in err_str.lower() and idx > 0:
@@ -410,18 +426,26 @@ def main():
     out = []
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        ctx = browser.new_context(
-            ignore_https_errors=True,            # bo qua TLS het han
-            viewport={"width": 1280, "height": 800}, locale=args.locale,
-            user_agent=("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-                        "(KHTML, like Gecko) Chrome/122.0 Safari/537.36"))
-        ctx.set_default_timeout(25000)
         for i, (name, url) in enumerate(targets, 1):
-            page = ctx.new_page()
+            ctx = None
             try:
+                ctx = browser.new_context(
+                    ignore_https_errors=True,            # bo qua TLS het han
+                    viewport={"width": 1280, "height": 800}, locale=args.locale,
+                    user_agent=("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+                                "(KHTML, like Gecko) Chrome/122.0 Safari/537.36"))
+                ctx.set_default_timeout(20000)
+                page = ctx.new_page()
+                page.set_default_timeout(20000)
                 r = probe(page, url)
             except Exception as e:
                 r = {"loaded": False, "error": str(e)[:120]}
+            finally:
+                if ctx:
+                    try:
+                        ctx.close()
+                    except Exception:
+                        pass
             r["name"], r["url"] = name, url
             if r["loaded"]:
                 extra_s = (f"flight={r['flight_form']} iata={r['iata_found']}"
@@ -431,7 +455,6 @@ def main():
             print(f"[{i}/{len(targets)}] {'LOADED' if r['loaded'] else 'DEAD':6} "
                   f"{str(name)[:34]:<34} {extra_s}")
             out.append(r)
-            page.close()
         browser.close()
 
     json.dump(out, open(args.output, "w"), ensure_ascii=False, indent=1)

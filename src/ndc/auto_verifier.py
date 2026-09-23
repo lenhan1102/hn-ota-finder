@@ -243,13 +243,6 @@ def run_auto_verification(
             headless=headless,
             args=["--disable-dev-shm-usage", "--no-sandbox"],
         )
-        ctx = browser.new_context(
-            ignore_https_errors=True,
-            viewport={"width": 1280, "height": 800},
-            locale=locale,
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        )
-        ctx.set_default_timeout(7000)
 
         for i, item in enumerate(unique_sites, 1):
             dom = item["domain"]
@@ -289,8 +282,18 @@ def run_auto_verification(
             # Bắn tín hiệu log lên UI ngay trước khi bắt đầu tải trang
             _fire_progress(i, dom, "-> Đang kết nối và kiểm tra...")
 
-            page = ctx.new_page()
+            # Khởi tạo BrowserContext riêng biệt cho từng website để cách ly 100%
+            # Tránh hoàn toàn việc website trước mở popup/iframe làm treo deadlock website sau
+            ctx = None
             try:
+                ctx = browser.new_context(
+                    ignore_https_errors=True,
+                    viewport={"width": 1280, "height": 800},
+                    locale=locale,
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                )
+                ctx.set_default_timeout(7000)
+                page = ctx.new_page()
                 page.set_default_timeout(7000)
                 try:
                     page.on("dialog", lambda dialog: dialog.dismiss())
@@ -300,10 +303,11 @@ def run_auto_verification(
             except Exception as e:
                 probe_res = {"loaded": False, "error": str(e)[:100]}
             finally:
-                try:
-                    page.close()
-                except Exception:
-                    pass
+                if ctx:
+                    try:
+                        ctx.close()
+                    except Exception:
+                        pass
 
             probe_res["name"] = item["name"]
             probe_res["url"] = url
