@@ -249,17 +249,17 @@ def run_auto_verification(
             locale=locale,
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         )
-        ctx.set_default_timeout(8000)
+        ctx.set_default_timeout(7000)
 
         for i, item in enumerate(unique_sites, 1):
             dom = item["domain"]
             url = item["url"]
-            print(f"  [{i}/{len(unique_sites)}] Đang kiểm tra: {dom}...", end=" ", flush=True)
+            print(f"  [{i}/{len(unique_sites)}] Đang kiểm tra: {dom}...", flush=True)
 
             # DNS Pre-check sieu nhanh (0.02s) de tranh ngam timeout vo tan tren site chet/NXDOMAIN
             if not check_domain_resolves(dom):
-                print(f"[TRUY_CẬP_THẤT_BẠI]")
-                print(f"       [-] Bị loại [Thẩm định]: {dom} | Lý do: Tên miền không tồn tại hoặc lỗi phân giải DNS (NXDOMAIN)")
+                print(f"       [TRUY_CẬP_THẤT_BẠI] Tên miền không tồn tại hoặc lỗi phân giải DNS (NXDOMAIN)", flush=True)
+                print(f"       [-] Bị loại [Thẩm định]: {dom} | Lý do: Tên miền không tồn tại hoặc lỗi phân giải DNS (NXDOMAIN)", flush=True)
                 probe_res = {
                     "loaded": False,
                     "error": "DNS_PROBE_FINISHED_NXDOMAIN (Tên miền không tồn tại hoặc chết DNS)",
@@ -286,13 +286,24 @@ def run_auto_verification(
                 _fire_progress(i, dom, "-> Không thể phân giải DNS (NXDOMAIN)")
                 continue
 
+            # Bắn tín hiệu log lên UI ngay trước khi bắt đầu tải trang
+            _fire_progress(i, dom, "-> Đang kết nối và kiểm tra...")
+
             page = ctx.new_page()
             try:
-                probe_res = probe(page, url, timeout_ms=8000)
+                page.set_default_timeout(7000)
+                try:
+                    page.on("dialog", lambda dialog: dialog.dismiss())
+                except Exception:
+                    pass
+                probe_res = probe(page, url, timeout_ms=7000)
             except Exception as e:
                 probe_res = {"loaded": False, "error": str(e)[:100]}
             finally:
-                page.close()
+                try:
+                    page.close()
+                except Exception:
+                    pass
 
             probe_res["name"] = item["name"]
             probe_res["url"] = url
@@ -345,24 +356,24 @@ def run_auto_verification(
 
             title_p = probe_res.get("title", "")[:40]
             if not probe_res.get("loaded"):
-                print(f"[TRUY_CẬP_THẤT_BẠI] | Tiêu đề: '{title_p}'")
                 err_clean = probe_res.get("error", "Lỗi tải trang hoặc chặn bot")
-                print(f"       [-] Bị loại [Thẩm định]: {dom} | Lý do: Không thể truy cập website ({err_clean[:60]})")
+                print(f"       [TRUY_CẬP_THẤT_BẠI] | Tiêu đề: '{title_p}'", flush=True)
+                print(f"       [-] Bị loại [Thẩm định]: {dom} | Lý do: Không thể truy cập website ({err_clean[:60]})", flush=True)
             else:
                 has_flight = bool(verdict.get("flightticketing"))
                 if has_flight:
-                    print(f"[TRUY_CẬP_THÀNH_CÔNG] | Tiêu đề: '{title_p}' -> CÓ BÁN VÉ MÁY BAY (Đủ điều kiện)")
+                    print(f"       [TRUY_CẬP_THÀNH_CÔNG] | Tiêu đề: '{title_p}' -> CÓ BÁN VÉ MÁY BAY (Đủ điều kiện)", flush=True)
                     form_txt = "Có" if probe_res.get("flight_form") else "Không"
                     iata_txt = probe_res.get("iata_number") or ("Có" if probe_res.get("iata_found") else "Không")
-                    print(f"       [+] Đạt chuẩn [Thẩm định]: {dom} | Lý do: Phát hiện nội dung bán vé máy bay (Form vé: {form_txt}, IATA: {iata_txt})")
+                    print(f"       [+] Đạt chuẩn [Thẩm định]: {dom} | Lý do: Phát hiện nội dung bán vé máy bay (Form vé: {form_txt}, IATA: {iata_txt})", flush=True)
                 else:
-                    print(f"[TRUY_CẬP_THÀNH_CÔNG] | Tiêu đề: '{title_p}' -> KHÔNG BÁN VÉ")
-                    print(f"       [-] Không đạt chuẩn [Thẩm định]: {dom} | Lý do: Website không có nội dung bán vé máy bay (Tour thuần hoặc ngành khác)")
+                    print(f"       [TRUY_CẬP_THÀNH_CÔNG] | Tiêu đề: '{title_p}' -> KHÔNG BÁN VÉ", flush=True)
+                    print(f"       [-] Không đạt chuẩn [Thẩm định]: {dom} | Lý do: Website không có nội dung bán vé máy bay (Tour thuần hoặc ngành khác)", flush=True)
 
             if probe_res.get("flight_form"):
-                print(f"          -> Chi tiết Form vé: {probe_res.get('flight_form_detail')}")
+                print(f"          -> Chi tiết Form vé: {probe_res.get('flight_form_detail')}", flush=True)
             if probe_res.get("iata_found"):
-                print(f"          -> Chi tiết IATA: {probe_res.get('iata_number') or 'Có'}")
+                print(f"          -> Chi tiết IATA: {probe_res.get('iata_number') or 'Có'}", flush=True)
                 
             detail_tag = "-> Đạt chuẩn (Có bán vé)" if verdict.get("flightticketing") else ("-> Không đạt chuẩn (Không bán vé)" if probe_res.get("loaded") else f"-> Không thể truy cập ({probe_res.get('error', 'Timeout/Error')[:30]})")
             _fire_progress(i, dom, detail_tag)

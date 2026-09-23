@@ -1,5 +1,6 @@
 import json
 import uuid
+from pathlib import Path
 from db.db_connection import get_db_connection
 
 
@@ -195,16 +196,21 @@ def insert_place_verdicts(verdicts_data):
     for v in verdicts_data:
         if not v.get("db_place_id"):
             continue
+        is_alive = 1 if (v.get("is_alive") or v.get("reachable") or v.get("real")) else 0
+        has_flight_form = 1 if (v.get("has_flight_form") or v.get("flightticketing") or v.get("onlinesearch")) else 0
+        has_iata = 1 if (v.get("has_iata") or v.get("iata")) else 0
+        has_iframe = 1 if (v.get("has_iframe") or v.get("iframe")) else 0
+        error_msg = v.get("error") or v.get("evidence") or ""
         data.append((
             str(uuid.uuid4()),
             str(v.get("db_place_id")),
-            1 if v.get("is_alive") else 0,
-            1 if v.get("has_flight_form") else 0,
-            1 if v.get("has_iata") else 0,
-            1 if v.get("has_iframe") else 0,
+            is_alive,
+            has_flight_form,
+            has_iata,
+            has_iframe,
             v.get("iframe_src"),
             json.dumps(v.get("ai_classification")) if v.get("ai_classification") else None,
-            v.get("error")
+            error_msg
         ))
         
     try:
@@ -499,20 +505,41 @@ def get_job_steps_data_from_db(job_id):
                 for vr in v_rows:
                     title, web, alive, fl_form, iata, iframe, if_src, ai_cls, err = vr
                     parsed_ai = safe_json_loads(ai_cls, default={})
+                    is_reachable = 1 if alive else 0
+                    has_ticket = 1 if fl_form else 0
+                    is_accepted = 1 if (is_reachable and has_ticket) else 0
+                    
+                    if not is_reachable:
+                        verdict_status = "Bị loại: Không thể truy cập website"
+                    elif not has_ticket:
+                        verdict_status = "Bị loại: Không có cổng đặt vé máy bay"
+                    else:
+                        verdict_status = "Đạt chuẩn: Có bán vé máy bay"
+                        
                     verdicts.append({
                         "website": web or "",
                         "title": title or "",
-                        "reachable": 1 if alive else 0,
-                        "flightticketing": 1 if fl_form else 0,
-                        "onlinesearch": 1 if fl_form else 0,
+                        "reachable": is_reachable,
+                        "flightticketing": has_ticket,
+                        "onlinesearch": has_ticket,
                         "iata": 1 if iata else 0,
                         "iframe": 1 if iframe else 0,
                         "iframe_src": if_src or "",
                         "ai_classification": parsed_ai,
-                        "error": err or ""
+                        "error": err or "",
+                        "is_accepted": is_accepted,
+                        "verdict_status": verdict_status
                     })
+                accepted_count = sum(1 for v in verdicts if v.get("is_accepted"))
+                rejected_count = len(verdicts) - accepted_count
                 steps_data["step4"]["verdicts"] = verdicts
                 steps_data["step4"]["verdicts_count"] = len(verdicts)
+                steps_data["step4"]["summary"] = {
+                    "total_tested": len(verdicts),
+                    "accepted_count": accepted_count,
+                    "rejected_count": rejected_count,
+                    "iata_count": sum(1 for v in verdicts if v.get("iata")),
+                }
 
                 # Bước 5: Final Leads
                 cur.execute("""
@@ -551,11 +578,102 @@ def get_job_steps_data_from_db(job_id):
 
                 steps_data["step5"]["qualified_leads"] = qual
                 steps_data["step5"]["dropped_leads"] = drop
-                steps_data["step5"]["summary"] = {
-                    "qualified_count": len(qual),
-                    "dropped_count": len(drop),
-                    "total_leads": len(qual) + len(drop)
-                }
+                if len(qual) == 0 and len(drop) == 0:
+                    l_sum = job.get("leads_summary") or job.get("result") or {}
+                    if isinstance(l_sum, str):
+                        l_sum = safe_json_loads(l_sum, default={})
+                    
+                    excel_fn = l_sum.get("excel_filename", "")
+                    json_fn = excel_fn.replace("_ndc_leads_", "_leads_").replace(".xlsx", ".json") if excel_fn else ""
+                    
+                    output_dir = Path(__file__).resolve().parent.parent.parent / "output"
+                    json_file_path = output_dir / json_fn if json_fn else None
+                    if json_file_path and json_file_path.exists():
+                        try:
+                            with open(json_file_path, "r", encoding="utf-8") as jf:
+                                jdata = json.load(jf)
+                                qual = jdata.get("qualified_leads", [])
+                                drop = jdata.get("dropped_leads", [])
+                                for item in qual:
+                                    c_name = item.get("name") or item.get("company_name") or item.get("title") or item.get("gmaps_name") or ""
+                                    item["company_name"] = c_name
+                                    item["title"] = c_name
+                                    if "tier" not in item:
+                                        item["tier"] = "Tier 1"
+                                for item in drop:
+                                    c_name = item.get("name") or item.get("company_name") or item.get("title") or item.get("gmaps_name") or ""
+                                    item["company_name"] = c_name
+                                    item["title"] = c_name
+                                    if "tier" not in item:
+                                        item["tier"] = "Dropped"
+                                steps_data["step5"]["qualified_leads"] = qual
+                                steps_data["step5"]["dropped_leads"] = drop
+                                steps_data["step5"]["summary"] = {
+                                    "qualified_count": len(qual),
+                                    "dropped_count": len(drop),
+                                    "total_leads": len(qual) + len(drop)
+                                }
+                                
+                                # Khôi phục cờ Đạt chuẩn cho Step 4 nếu dữ liệu DB cũ bị ghi 0
+                                if steps_data["step4"]["summary"]["accepted_count"] == 0 and len(qual) > 0:
+                                    qual_urls = {str(l.get("website", "")).strip().rstrip("/").lower() for l in qual if l.get("website")}
+                                    qual_names = {str(l.get("name", "")).strip().lower() for l in qual if l.get("name")}
+                                    for v in steps_data["step4"]["verdicts"]:
+                                        v_web = str(v.get("website", "")).strip().rstrip("/").lower()
+                                        v_title = str(v.get("title", "")).strip().lower()
+                                        if v_web in qual_urls or v_title in qual_names:
+                                            v["reachable"] = 1
+                                            v["flightticketing"] = 1
+                                            v["onlinesearch"] = 1
+                                            v["is_accepted"] = 1
+                                            v["verdict_status"] = "Đạt chuẩn: Có bán vé máy bay"
+                                    
+                                    acc_cnt = sum(1 for v in steps_data["step4"]["verdicts"] if v.get("is_accepted"))
+                                    steps_data["step4"]["summary"]["accepted_count"] = acc_cnt
+                                    steps_data["step4"]["summary"]["rejected_count"] = len(steps_data["step4"]["verdicts"]) - acc_cnt
+                        except Exception as ex:
+                            print(f"Lỗi đọc fallback json {json_file_path}: {ex}")
+                    else:
+                        # Tái tạo danh sách từ dữ liệu thẩm định Step 4 của chính job này
+                        s4_verdicts = steps_data.get("step4", {}).get("verdicts", [])
+                        qual_from_s4 = [
+                            {
+                                "title": v.get("title") or "–",
+                                "company_name": v.get("title") or "–",
+                                "website": v.get("website") or "",
+                                "tier": "Tier 1",
+                                "reason": v.get("verdict_status") or "Đạt chuẩn",
+                            }
+                            for v in s4_verdicts
+                            if v.get("is_accepted")
+                        ]
+                        dropped_from_s4 = [
+                            {
+                                "title": v.get("title") or "–",
+                                "company_name": v.get("title") or "–",
+                                "website": v.get("website") or "",
+                                "tier": "Dropped",
+                                "reason": v.get("verdict_status") or v.get("error") or "Không đạt tiêu chuẩn",
+                            }
+                            for v in s4_verdicts
+                            if not v.get("is_accepted")
+                        ]
+                        steps_data["step5"]["qualified_leads"] = qual_from_s4
+                        steps_data["step5"]["dropped_leads"] = dropped_from_s4
+                        q_cnt = l_sum.get("qualified_count", len(qual_from_s4))
+                        d_cnt = l_sum.get("dropped_count", len(dropped_from_s4))
+                        t_cnt = l_sum.get("total_leads", q_cnt + d_cnt)
+                        steps_data["step5"]["summary"] = {
+                            "qualified_count": q_cnt,
+                            "dropped_count": d_cnt,
+                            "total_leads": t_cnt,
+                        }
+                else:
+                    steps_data["step5"]["summary"] = {
+                        "qualified_count": len(qual),
+                        "dropped_count": len(drop),
+                        "total_leads": len(qual) + len(drop)
+                    }
 
         return steps_data
     except Exception as e:

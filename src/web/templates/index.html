@@ -903,18 +903,7 @@
                 </select>
               </div>
 
-              <!-- Dev Secret: Mặc định ẩn với người dùng thông thường, dev kích hoạt bí mật mới hiện -->
-              <div class="form-group" id="headlessGroup" style="display: none; background: rgba(99, 102, 241, 0.07); border: 1px dashed rgba(99, 102, 241, 0.35); border-radius: var(--radius-sm); padding: 12px 14px; margin-top: 10px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                  <label for="headlessSelect" style="margin-bottom: 0; font-weight: 600; color: #a5b4fc; font-size: 13px;">🖥️ Chế độ trình duyệt (Dev Secret):</label>
-                  <span style="font-size: 10px; background: rgba(99, 102, 241, 0.25); color: #c7d2fe; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-weight: 700;">DEV MODE</span>
-                </div>
-                <select id="headlessSelect" class="form-control" style="border-color: rgba(99, 102, 241, 0.4);">
-                  <option value="true" selected>Headless (Chạy ẩn không mở cửa sổ - Mặc định)</option>
-                  <option value="false">Mở cửa sổ Chromium (Trực quan / Debug GUI)</option>
-                </select>
-                <div class="helper-text" style="font-size: 11px; margin-top: 4px; color: #94a3b8;">* Lựa chọn bí mật dành cho dev debug trực quan.</div>
-              </div>
+              
             </div>
           </div>
 
@@ -1410,8 +1399,7 @@
       const concurrency = parseInt(document.getElementById('concurrencyInput').value);
       const max_sites = parseInt(document.getElementById('maxSitesInput').value);
       const market_type = document.getElementById('marketType').value;
-      const headlessSelect = document.getElementById('headlessSelect');
-      const headless = headlessSelect ? (headlessSelect.value === 'true') : true;
+      const headless = true; // Luon chay headless
 
       const payload = {
         country,

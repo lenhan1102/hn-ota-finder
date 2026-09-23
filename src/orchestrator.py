@@ -148,7 +148,7 @@ def execute_pipeline(
             # Nếu từ khóa chỉ là cụm chung chung không kèm địa danh (ví dụ 'phòng vé máy bay'),
             # tự động gắn thêm địa danh/quốc gia để Google Maps trả về danh sách Feed kết quả thay vì điều hướng đường đi
             if not has_location:
-                if lang == "vi" or any(c in kw_lower for c in "áàảãạăắằẳẵặâấầẩẫậéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵđ"):
+                if "vi" in str(lang).lower() or any(c in kw_lower for c in "áàảãạăắằẳẵặâấầẩẫậéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵđ"):
                     scoped_kw = f"{kw_clean} tại {country_label}"
                 else:
                     scoped_kw = f"{kw_clean} in {country_label}"
@@ -573,6 +573,8 @@ def execute_pipeline(
             l["tier"] = "Dropped"
             l["dropped_reason"] = l.get("reason", "Unknown drop reason")
             all_leads.append(l)
+        if all_leads:
+            insert_final_leads(all_leads)
         leads_summary = {
             "qualified_count": len(qual),
             "dropped_count": len(drop),

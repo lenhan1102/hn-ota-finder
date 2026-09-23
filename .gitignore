@@ -19,3 +19,4 @@ bin/google-maps-scraper.exe
 DEPLOY_AGENT.md
 logs/
 output/*.json
+debug_screenshots/

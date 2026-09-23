@@ -67,11 +67,21 @@ class SafeJSONResponse(JSONResponse):
         ).encode("utf-8")
 
 
+from fastapi.middleware.cors import CORSMiddleware
+
 app = FastAPI(
     title="Google Maps Scraper - NDC Leads & OTA Finder",
     description="Giao dien quan ly va tim kiem dai ly ban ve may bay & OTA",
     version="1.0.0",
     default_response_class=SafeJSONResponse,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"^https?://.*",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR", BASE_DIR / "output"))
@@ -147,7 +157,7 @@ def run_job_task(job_id: str, payload: dict):
             output_dir=str(OUTPUT_DIR),
             max_sites=payload.get("max_sites", 0),
             market_type=payload.get("market_type", "auto"),
-            headless=payload.get("headless", True),
+            headless=True,  # Luon luon ep chay headless = True
             progress_callback=on_progress,
             job_id=job_id,
         )
@@ -210,7 +220,7 @@ async def get_countries():
 async def create_job(req: JobCreateRequest, bg_tasks: BackgroundTasks):
     job_id = str(uuid.uuid4())
     t_now = time.strftime("%H:%M:%S")
-    headless_val = req.headless
+    headless_val = True
 
     keywords_list = []
     if req.custom_keywords:

@@ -268,20 +268,41 @@ def check_domain_resolves(url_or_domain: str, timeout: float = 1.0) -> bool:
         return False
 
 
-def probe(page, url, timeout_ms: int = 8000):
+def probe(page, url, timeout_ms: int = 7000):
     """Thu lan luot https:// -> https://www. -> http:// truoc khi ket luan site chet."""
     if not check_domain_resolves(url):
         return {"loaded": False, "error": "DNS_PROBE_FINISHED_NXDOMAIN (Tên miền không tồn tại hoặc chết DNS)"}
 
+    # Tu dong tat dialog / alert de tranh treo tien trinh Playwright
+    try:
+        page.on("dialog", lambda dialog: dialog.dismiss())
+    except Exception:
+        pass
+
+    # Chan tai hinh anh, media, fonts de tang toc 3-5 lan va tranh ngam bo nho
+    try:
+        page.route("**/*", lambda route: route.abort() if route.request.resource_type in ["image", "media", "font"] else route.continue_())
+    except Exception:
+        pass
+
     last = "all variants failed"
-    for u in (url, url.replace("https://", "https://www."), url.replace("https://", "http://")):
+    variants = [url]
+    if "https://" in url:
+        if not url.startswith("https://www."):
+            variants.append(url.replace("https://", "https://www."))
+        variants.append(url.replace("https://", "http://"))
+    elif "http://" in url:
+        variants.append(url.replace("http://", "https://"))
+
+    for idx, u in enumerate(variants):
         try:
-            resp = page.goto(u, wait_until="domcontentloaded", timeout=timeout_ms)
+            curr_timeout = timeout_ms if idx == 0 else min(timeout_ms, 4000)
+            resp = page.goto(u, wait_until="domcontentloaded", timeout=curr_timeout)
             try:
-                page.wait_for_load_state("networkidle", timeout=2000)
+                page.wait_for_load_state("networkidle", timeout=1500)
             except Exception:
                 pass
-            time.sleep(1.0)
+            time.sleep(0.5)
             title = (page.title() or "").strip()
             try:
                 body = (page.inner_text("body") or "")[:7000]
@@ -351,8 +372,11 @@ def probe(page, url, timeout_ms: int = 8000):
         except Exception as e:
             err_str = str(e)
             last = err_str[:120]
-            # Neu loi DNS hoac tu choi ket noi thi cac bien the khac cung se loi -> break ngay
-            if any(k in err_str for k in ["ERR_NAME_NOT_RESOLVED", "ERR_CONNECTION_REFUSED", "NXDOMAIN", "ERR_ADDRESS_UNREACHABLE", "ERR_CONNECTION_RESET"]):
+            # Neu loi DNS, tu choi ket noi hoac certificate loi thi dung ngay
+            if any(k in err_str for k in ["ERR_NAME_NOT_RESOLVED", "ERR_CONNECTION_REFUSED", "NXDOMAIN", "ERR_ADDRESS_UNREACHABLE", "ERR_CONNECTION_RESET", "ERR_CERT_"]):
+                break
+            # Neu bien the thu hai tro di ma bi timeout thi bo qua ngay de tiet kiem thoi gian
+            if "timeout" in err_str.lower() and idx > 0:
                 break
     return {"loaded": False, "error": last}
 
