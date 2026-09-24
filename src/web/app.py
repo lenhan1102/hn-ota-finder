@@ -722,7 +722,60 @@ async def download_debug_file(job_id: str, filename: str):
     raise HTTPException(status_code=404, detail=f"Không tìm thấy dữ liệu cho {filename}")
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# DEV-ONLY: Hidden endpoints để debug pipeline errors (chỉ dev biết URL này)
+# Không xuất hiện trong Swagger UI vì include_in_schema=False
+# ─────────────────────────────────────────────────────────────────────────────
+try:
+    from pipeline_logger import get_error_log, clear_error_log
+    _pipeline_logger_available = True
+except ImportError:
+    _pipeline_logger_available = False
+    def get_error_log(): return []
+    def clear_error_log(): pass
+
+
+@app.get("/api/_dbg/pipeline-errors", include_in_schema=False)
+async def dev_pipeline_errors(job_id: str = "", level: str = "WARNING", limit: int = 200):
+    """
+    [DEV ONLY] Xem các lỗi pipeline gần nhất từ ring buffer in-memory.
+    - Không lưu DB, không ghi file, tự xóa khi restart
+    - Chỉ chứa WARNING + ERROR (watchdog timeout, site lỗi...)
+    - Query params: ?job_id=xxx  ?level=ERROR  ?limit=50
+    """
+    entries = get_error_log()
+
+    # Filter theo job_id nếu có
+    if job_id:
+        entries = [e for e in entries if e.get("job_id", "") == job_id]
+
+    # Filter theo level
+    level_order = {"DEBUG": 0, "INFO": 1, "WARNING": 2, "ERROR": 3, "CRITICAL": 4}
+    min_level = level_order.get(level.upper(), 2)
+    entries = [e for e in entries if level_order.get(e.get("level", ""), 0) >= min_level]
+
+    # Giới hạn số lượng trả về (mới nhất)
+    entries = entries[-limit:]
+
+    return SafeJSONResponse({
+        "total": len(entries),
+        "limit": limit,
+        "filter_job_id": job_id or "(all)",
+        "filter_level": level,
+        "note": "Ring buffer in-memory — tự xóa khi restart server. Max 500 entries.",
+        "entries": entries,
+    })
+
+
+@app.get("/api/_dbg/pipeline-errors/clear", include_in_schema=False)
+async def dev_clear_pipeline_errors():
+    """[DEV ONLY] Xóa toàn bộ ring buffer lỗi pipeline."""
+    clear_error_log()
+    return {"ok": True, "msg": "Ring buffer đã được xóa."}
+
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
     uvicorn.run("app:app", host="0.0.0.0", port=port, reload=True)
+
