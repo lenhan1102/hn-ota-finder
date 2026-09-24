@@ -12,10 +12,26 @@ import os
 import re
 import sys
 import time
+import threading
 from pathlib import Path
 from urllib.parse import urlparse
 
 import pandas as pd
+
+# Logger tập trung — ghi ra file để debug khi treo
+try:
+    import sys as _sys
+    _src_dir = str(Path(__file__).resolve().parent.parent)
+    if _src_dir not in _sys.path:
+        _sys.path.insert(0, _src_dir)
+    from pipeline_logger import get_logger as _get_pipeline_logger
+except ImportError:
+    _get_pipeline_logger = None
+
+# Timeout tối đa (giây) cho một site trước khi watchdog force-kill
+SITE_HARD_TIMEOUT_SEC = int(os.getenv("VERIFIER_SITE_TIMEOUT", "30"))
+# Heartbeat: log tiến độ sau mỗi N site
+HEARTBEAT_EVERY = int(os.getenv("VERIFIER_HEARTBEAT_EVERY", "5"))
 
 try:
     from playwright.sync_api import sync_playwright
@@ -122,6 +138,8 @@ def run_auto_verification(
     max_sites: int = 0,
     headless: bool = True,
     progress_callback = None,
+    log_dir: str | Path = None,
+    job_id: str = "",
 ) -> tuple[list[dict], list[dict]]:
     if isinstance(candidates_data, pd.DataFrame):
         df = candidates_data.copy()
@@ -198,13 +216,28 @@ def run_auto_verification(
     if max_sites > 0:
         unique_sites = unique_sites[:max_sites]
 
+    # Khởi tạo logger tập trung
+    _log = None
+    if _get_pipeline_logger is not None:
+        try:
+            _effective_log_dir = log_dir or os.getenv("PIPELINE_LOG_DIR", "/app/logs")
+            _log = _get_pipeline_logger(job_id=job_id, log_dir=_effective_log_dir)
+            _log.step_start(4, "Tham dinh website")
+            _log.info(f"Tong so site can tham dinh: {len(unique_sites)} | headless={headless}")
+        except Exception as _le:
+            print(f"    [WARN] Khong khoi tao duoc logger: {_le}")
+            _log = None
+
     print(f"\n{'='*70}")
     print(f"  BẮT ĐẦU THẨM ĐỊNH {len(unique_sites)} WEBSITE BẰNG PLAYWRIGHT CHROMIUM")
     print(f"  Headless: {headless} (Cửa sổ trình duyệt: {'ẨN' if headless else 'HIỆN THỰC TẾ'})")
+    print(f"  Log file: {_log.log_file if _log else '(logging disabled)'}")
     print(f"{'='*70}")
 
     if not unique_sites:
         print("    Không có website nào để thẩm định. Bỏ qua bước Playwright.")
+        if _log:
+            _log.info("Khong co website nao de tham dinh. Bo qua Playwright.")
         if progress_callback:
             progress_callback(4, "Thẩm định website", 85, "Không có website nào để thẩm định bằng Playwright", inter_data={"verdicts": verdicts, "reverify": []})
         return verdicts, []
@@ -220,6 +253,7 @@ def run_auto_verification(
         print("    Không có AI API Key -> Sử dụng thuật toán phân tích Playwright Offline")
 
     reverify_records = []
+    _step4_start = time.time()
 
     if sync_playwright is None:
         raise RuntimeError("Playwright chưa được cài đặt.")
@@ -248,11 +282,19 @@ def run_auto_verification(
             dom = item["domain"]
             url = item["url"]
             print(f"  [{i}/{len(unique_sites)}] Đang kiểm tra: {dom}...", flush=True)
+            if _log:
+                _log.site_start(i, len(unique_sites), dom)
+
+            # Heartbeat định kỳ
+            if _log and i > 1 and (i - 1) % HEARTBEAT_EVERY == 0:
+                _log.heartbeat(i - 1, len(unique_sites), time.time() - _step4_start)
 
             # DNS Pre-check sieu nhanh (0.02s) de tranh ngam timeout vo tan tren site chet/NXDOMAIN
             if not check_domain_resolves(dom):
                 print(f"       [TRUY_CẬP_THẤT_BẠI] Tên miền không tồn tại hoặc lỗi phân giải DNS (NXDOMAIN)", flush=True)
                 print(f"       [-] Bị loại [Thẩm định]: {dom} | Lý do: Tên miền không tồn tại hoặc lỗi phân giải DNS (NXDOMAIN)", flush=True)
+                if _log:
+                    _log.site_skip(i, len(unique_sites), dom, "NXDOMAIN / DNS fail")
                 probe_res = {
                     "loaded": False,
                     "error": "DNS_PROBE_FINISHED_NXDOMAIN (Tên miền không tồn tại hoặc chết DNS)",
@@ -282,6 +324,31 @@ def run_auto_verification(
             # Bắn tín hiệu log lên UI ngay trước khi bắt đầu tải trang
             _fire_progress(i, dom, "-> Đang kết nối và kiểm tra...")
 
+            # ── Watchdog: hard timeout per-site ──────────────────────────────
+            # Nếu probe() hoặc ctx.close() bị treo quá SITE_HARD_TIMEOUT_SEC giây,
+            # watchdog sẽ force-close browser context và raise TimeoutError
+            _site_start_ts = time.time()
+            _ctx_ref = [None]  # mutable container để watchdog truy cập
+            _watchdog_fired = threading.Event()
+
+            def _watchdog_fn(
+                _i=i, _dom=dom, _ts=_site_start_ts, _total=len(unique_sites),
+            ):
+                elapsed = time.time() - _ts
+                if _log:
+                    _log.site_hang(_i, _total, _dom, elapsed)
+                print(f"  [WATCHDOG] Site '{_dom}' treo {elapsed:.0f}s — force-close!", flush=True)
+                _watchdog_fired.set()
+                if _ctx_ref[0] is not None:
+                    try:
+                        _ctx_ref[0].close()
+                    except Exception:
+                        pass
+
+            _timer = threading.Timer(SITE_HARD_TIMEOUT_SEC, _watchdog_fn)
+            _timer.daemon = True
+            _timer.start()
+
             # Khởi tạo BrowserContext riêng biệt cho từng website để cách ly 100%
             # Tránh hoàn toàn việc website trước mở popup/iframe làm treo deadlock website sau
             ctx = None
@@ -292,6 +359,7 @@ def run_auto_verification(
                     locale=locale,
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
                 )
+                _ctx_ref[0] = ctx
                 ctx.set_default_timeout(7000)
                 page = ctx.new_page()
                 page.set_default_timeout(7000)
@@ -301,13 +369,18 @@ def run_auto_verification(
                     pass
                 probe_res = probe(page, url, timeout_ms=7000)
             except Exception as e:
-                probe_res = {"loaded": False, "error": str(e)[:100]}
+                err_msg = str(e)[:100]
+                if _watchdog_fired.is_set():
+                    err_msg = f"WATCHDOG_TIMEOUT ({SITE_HARD_TIMEOUT_SEC}s): {err_msg}"
+                probe_res = {"loaded": False, "error": err_msg}
             finally:
+                _timer.cancel()  # huỷ watchdog nếu site xong trước hạn
                 if ctx:
                     try:
                         ctx.close()
                     except Exception:
                         pass
+                _ctx_ref[0] = None
 
             probe_res["name"] = item["name"]
             probe_res["url"] = url
@@ -358,11 +431,15 @@ def run_auto_verification(
             verdict["db_place_id"] = item.get("db_place_id")
             verdicts.append(verdict)
 
+            # Ghi log kết quả site
+            _site_elapsed = time.time() - _site_start_ts
             title_p = probe_res.get("title", "")[:40]
             if not probe_res.get("loaded"):
                 err_clean = probe_res.get("error", "Lỗi tải trang hoặc chặn bot")
                 print(f"       [TRUY_CẬP_THẤT_BẠI] | Tiêu đề: '{title_p}'", flush=True)
                 print(f"       [-] Bị loại [Thẩm định]: {dom} | Lý do: Không thể truy cập website ({err_clean[:60]})", flush=True)
+                if _log:
+                    _log.site_done(i, len(unique_sites), dom, _site_elapsed, f"DEAD | {err_clean[:80]}")
             else:
                 has_flight = bool(verdict.get("flightticketing"))
                 if has_flight:
@@ -370,9 +447,13 @@ def run_auto_verification(
                     form_txt = "Có" if probe_res.get("flight_form") else "Không"
                     iata_txt = probe_res.get("iata_number") or ("Có" if probe_res.get("iata_found") else "Không")
                     print(f"       [+] Đạt chuẩn [Thẩm định]: {dom} | Lý do: Phát hiện nội dung bán vé máy bay (Form vé: {form_txt}, IATA: {iata_txt})", flush=True)
+                    if _log:
+                        _log.site_done(i, len(unique_sites), dom, _site_elapsed, f"LOADED+FLIGHT | form={form_txt} iata={iata_txt}")
                 else:
                     print(f"       [TRUY_CẬP_THÀNH_CÔNG] | Tiêu đề: '{title_p}' -> KHÔNG BÁN VÉ", flush=True)
                     print(f"       [-] Không đạt chuẩn [Thẩm định]: {dom} | Lý do: Website không có nội dung bán vé máy bay (Tour thuần hoặc ngành khác)", flush=True)
+                    if _log:
+                        _log.site_done(i, len(unique_sites), dom, _site_elapsed, "LOADED | no-flight")
 
             if probe_res.get("flight_form"):
                 print(f"          -> Chi tiết Form vé: {probe_res.get('flight_form_detail')}", flush=True)
@@ -383,6 +464,10 @@ def run_auto_verification(
             _fire_progress(i, dom, detail_tag)
 
         browser.close()
+
+    if _log:
+        _log.step_done(4, "Tham dinh website")
+        _log.info(f"Ket qua: {len(verdicts)} verdicts, {len(reverify_records)} reverify records")
 
     if output_reverify_json:
         output_reverify_json = Path(output_reverify_json)

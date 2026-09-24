@@ -537,6 +537,8 @@ def execute_pipeline(
         max_sites=max_sites,
         headless=headless,
         progress_callback=progress_callback,
+        log_dir=os.getenv("PIPELINE_LOG_DIR", "/app/logs"),
+        job_id=str(job_id) if job_id else "",
     )
     v_count = len(verdicts)
     update_progress(4, "Thẩm định website", 85, f"Đã thẩm định xong {v_count} website ứng viên.", inter_data={"verdicts": verdicts, "reverify": reverify_records})
