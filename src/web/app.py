@@ -34,6 +34,13 @@ from db.queries import (
     get_job_leads_for_excel_from_db,
     delete_search_job,
 )
+from enrich import (
+    SingleEnrichRequest,
+    BatchEnrichRequest,
+    EnrichmentResult,
+    enrich_single_lead,
+)
+
 
 
 def sanitize_for_json(obj):
@@ -720,6 +727,146 @@ async def download_debug_file(job_id: str, filename: str):
         return StreamingResponse(buf, media_type="application/json", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
     raise HTTPException(status_code=404, detail=f"Không tìm thấy dữ liệu cho {filename}")
+
+
+# ==============================================================================
+# FEATURE 2: AI CONTACT KEY ENRICHMENT API ROUTES
+# ==============================================================================
+
+@app.get("/api/enrich/options")
+async def get_enrichment_options():
+    """
+    Trả về danh sách các tùy chọn cho FE render UI:
+    - Discovery Methods: Google Dorking vs Playwright LinkedIn
+    - Enrichment Providers: Hunter, Apollo, Internal SMTP, Auto
+    - Định nghĩa các cấp độ ưu tiên (Tier 1 - 4)
+    """
+    return {
+        "discovery_methods": [
+            {
+                "id": "google_dorking",
+                "name": "Google Search Dorking",
+                "badge": "Khuyên dùng (Fast & Safe)",
+                "is_default": True,
+                "description": "Tốc độ nhanh (<1s), không cần đăng nhập tài khoản LinkedIn, không lo bị chặn IP."
+            },
+            {
+                "id": "playwright_linkedin",
+                "name": "Direct LinkedIn via Playwright",
+                "badge": "Quét chuyên sâu",
+                "is_default": False,
+                "description": "Mở trình duyệt thật cào LinkedIn. Cần cấu hình cookie li_at để tránh bị chặn."
+            }
+        ],
+        "enrichment_providers": [
+            {
+                "id": "auto",
+                "name": "Tự động (Auto Best Match)",
+                "badge": "Đề xuất",
+                "is_default": True,
+                "description": "Thử Hunter.io -> Apollo.io -> SMTP Pattern nội bộ."
+            },
+            {
+                "id": "hunter",
+                "name": "Hunter.io API",
+                "badge": "Xác thực cao",
+                "is_default": False,
+                "description": "Kiểm tra tỷ lệ sống hòm thư cao."
+            },
+            {
+                "id": "apollo",
+                "name": "Apollo.io API",
+                "badge": "Data B2B lớn",
+                "is_default": False,
+                "description": "Cơ sở dữ liệu B2B phủ rộng toàn cầu."
+            },
+            {
+                "id": "internal_smtp",
+                "name": "In-house Pattern + MX Check",
+                "badge": "Miễn phí 100%",
+                "is_default": False,
+                "description": "Không tốn chi phí API ngoài, tự sinh pattern và kiểm tra MX server."
+            }
+        ],
+        "tier_definitions": [
+            {
+                "tier": 1,
+                "label": "Tier 1: CEO / Founder",
+                "roles": "CEO, Founder, Co-Founder, Managing Director, Owner",
+                "badge_color": "emerald"
+            },
+            {
+                "tier": 2,
+                "label": "Tier 2: Head of BD",
+                "roles": "Head of BD, Head of Partnerships, BD Director",
+                "badge_color": "blue"
+            },
+            {
+                "tier": 3,
+                "label": "Tier 3: Head of Flight",
+                "roles": "Head of Flight, Air Ticketing Manager, Head of Ticketing",
+                "badge_color": "amber"
+            },
+            {
+                "tier": 4,
+                "label": "Tier 4: Fallback Department",
+                "roles": "partnerships@, contracting@, b2b@",
+                "badge_color": "purple"
+            }
+        ]
+    }
+
+
+@app.post("/api/enrich/lead", response_model=EnrichmentResult)
+async def enrich_lead_endpoint(req: SingleEnrichRequest):
+    """
+    API làm giàu thông tin cho 1 đại lý cụ thể.
+    FE truyền lên company_name, domain, country và các options tùy chọn.
+    """
+    try:
+        result = await enrich_single_lead(req)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi khi thực hiện enrichment: {str(e)}")
+
+
+@app.post("/api/enrich/batch")
+async def enrich_batch_endpoint(req: BatchEnrichRequest):
+    """
+    API làm giàu thông tin hàng loạt cho danh sách đại lý.
+    """
+    results = []
+    tier_counts = {1: 0, 2: 0, 3: 0, 4: 0}
+    success_count = 0
+    missing_count = 0
+
+    for lead_item in req.leads:
+        if not lead_item.options:
+            lead_item.options = req.options
+
+        res = await enrich_single_lead(lead_item)
+        results.append(res)
+
+        if res.status == "success":
+            success_count += 1
+            if res.primary_contact:
+                t = res.primary_contact.tier
+                tier_counts[t] = tier_counts.get(t, 0) + 1
+        else:
+            missing_count += 1
+
+    return {
+        "total": len(req.leads),
+        "success": success_count,
+        "missing_contact": missing_count,
+        "tier_summary": {
+            "tier_1": tier_counts.get(1, 0),
+            "tier_2": tier_counts.get(2, 0),
+            "tier_3": tier_counts.get(3, 0),
+            "tier_4": tier_counts.get(4, 0)
+        },
+        "results": results
+    }
 
 
 if __name__ == "__main__":

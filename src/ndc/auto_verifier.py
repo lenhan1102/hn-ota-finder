@@ -355,6 +355,8 @@ def run_auto_verification(
                 }
 
             verdict["reachable"] = 1 if probe_res.get("loaded") else 0
+            verdict["is_alive"] = 1 if probe_res.get("loaded") else 0
+            verdict["has_flight_form"] = 1 if verdict.get("flightticketing") else 0
             verdict["db_place_id"] = item.get("db_place_id")
             verdicts.append(verdict)
 
