@@ -796,9 +796,14 @@
           <p>Hệ thống tự động tìm kiếm & thẩm định đại lý vé máy bay từ Google Maps</p>
         </div>
       </div>
-      <div class="status-badge">
-        <div class="status-dot"></div>
-        <span>Hệ thống sẵn sàng</span>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <button id="devLogsHeaderBtn" onclick="toggleSecretLogsModal(true)" style="display: none; align-items: center; gap: 6px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.35); color: #fca5a5; font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 9999px; cursor: pointer; transition: all 0.2s ease;" title="Mở Dev Logs Console (Ctrl+Shift+L)">
+          <span>🔒</span> Dev Logs
+        </button>
+        <div class="status-badge" id="statusBadgeTrigger" style="cursor: pointer;" title="Nhấp đúp hoặc bấm Ctrl+Shift+L để mở Dev Logs" ondblclick="toggleSecretLogsModal(true)">
+          <div class="status-dot"></div>
+          <span>Hệ thống sẵn sàng</span>
+        </div>
       </div>
     </div>
   </header>
@@ -1304,6 +1309,7 @@
               <option value="">-- Chọn job để xem --</option>
             </select>
             <button class="btn btn-secondary btn-sm" onclick="loadDebugFiles()">🔄 Làm mới</button>
+            <button class="btn btn-secondary btn-sm" onclick="toggleSecretLogsModal(true)" style="border-color:rgba(239,68,68,0.4);color:#fca5a5;" title="Xem các lỗi & cảnh báo runtime trong bộ nhớ đệm (Ring Buffer)">🚨 Pipeline Logs (Dev)</button>
           </div>
         </div>
 
@@ -1329,6 +1335,26 @@
       <div class="modal-body" id="modalBody">
         <div class="modal-loading">⏳ Đang tải nội dung file...</div>
       </div>
+    </div>
+  </div>
+
+  <!-- Secret Dev Logs Modal (Phím tắt: Ctrl+Shift+L / ⌘+Shift+L) -->
+  <div class="modal-overlay" id="secretLogsModal" onclick="closeSecretLogsModal(event)" style="display:none; z-index:9999;">
+    <div class="modal-box" style="max-width: 95vw; width: 1350px; height: 90vh; display: flex; flex-direction: column; padding: 0; overflow: hidden; background: #070a12; border: 1px solid rgba(255,255,255,0.18); box-shadow: 0 25px 60px rgba(0,0,0,0.85); border-radius: 14px;">
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; border-bottom: 1px solid rgba(255,255,255,0.1); background: rgba(15,23,42,0.95); backdrop-filter: blur(12px);">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span style="background: rgba(239,68,68,0.2); border: 1px solid rgba(239,68,68,0.4); color: #fca5a5; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 6px;">🔒 SECRET DEV CONSOLE</span>
+          <span style="font-size: 14px; font-weight: 700; color: #fff;">Bộ Nhớ Đệm Lỗi Pipeline (In-Memory Ring Buffer)</span>
+          <span style="font-size: 11px; color: var(--text-dim); font-family: monospace;">(Ctrl+Shift+L hoặc ⌘+Shift+L)</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <a href="/_dbg/logs" target="_blank" class="btn btn-secondary btn-sm" style="font-size: 12px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;" title="Mở trang logs trong tab mới">
+            Mở toàn màn hình ↗
+          </a>
+          <button onclick="toggleSecretLogsModal(false)" style="background: transparent; border: none; color: #94a3b8; font-size: 22px; cursor: pointer; padding: 0 6px; line-height: 1;" title="Đóng (Esc)">✕</button>
+        </div>
+      </div>
+      <iframe id="secretLogsIframe" src="" style="width: 100%; height: 100%; border: none; flex: 1; background: #070a12;"></iframe>
     </div>
   </div>
 
@@ -1654,23 +1680,48 @@
       }, 3000);
     }
 
-    // ======= DEV SECRET: TOGGLE HEADLESS SELECTION =======
+    // ======= DEV SECRET: TOGGLE HEADLESS & SECRET LOGS =======
     function toggleDevHeadless(forceState = null) {
       const group = document.getElementById('headlessGroup');
+      const devLogsBtn = document.getElementById('devLogsHeaderBtn');
       if (!group) return;
       const isCurrentlyShown = group.style.display !== 'none';
       const shouldShow = forceState !== null ? forceState : !isCurrentlyShown;
       
       if (shouldShow) {
         group.style.display = 'block';
+        if (devLogsBtn) devLogsBtn.style.display = 'inline-flex';
         localStorage.setItem('dev_secret_headless', 'true');
-        showToast('🛠️ Đã bật chế độ Dev: Hiển thị tuỳ chọn Headless!', 'info');
+        showToast('🛠️ Đã bật chế độ Dev: Mở Headless & Phím tắt xem logs (Ctrl+Shift+L)!', 'info');
       } else {
         group.style.display = 'none';
+        if (devLogsBtn) devLogsBtn.style.display = 'none';
         localStorage.removeItem('dev_secret_headless');
         const sel = document.getElementById('headlessSelect');
         if (sel) sel.value = 'true';
-        showToast('🔒 Đã đóng chế độ Dev: Ẩn tuỳ chọn Headless.', 'info');
+        showToast('🔒 Đã đóng chế độ Dev.', 'info');
+      }
+    }
+
+    // Modal bí mật cho Dev Logs
+    function toggleSecretLogsModal(force) {
+      const modal = document.getElementById('secretLogsModal');
+      const iframe = document.getElementById('secretLogsIframe');
+      if (!modal) return;
+      const isShow = typeof force === 'boolean' ? force : (modal.style.display === 'none' || !modal.style.display);
+      if (isShow) {
+        if (!iframe.src || iframe.src === 'about:blank' || !iframe.src.includes('/_dbg/logs')) {
+          iframe.src = '/_dbg/logs';
+        }
+        modal.style.display = 'flex';
+      } else {
+        modal.style.display = 'none';
+      }
+    }
+
+    function closeSecretLogsModal(e) {
+      if (e.target && e.target.id === 'secretLogsModal') {
+        toggleSecretLogsModal(false);
       }
     }
 
@@ -1693,11 +1744,21 @@
       });
     }
 
-    // Secret Trigger 2: Phím tắt Ctrl + Shift + D (hoặc Cmd + Shift + D trên Mac)
+    // Secret Trigger 2: Phím tắt
+    // - Ctrl + Shift + D / ⌘ + Shift + D: Bật/tắt Dev mode
+    // - Ctrl + Shift + L / ⌘ + Shift + L: Mở ngay Secret Dev Logs Modal
+    // - Esc: Đóng Modal
     document.addEventListener('keydown', (e) => {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'D' || e.key === 'd')) {
         e.preventDefault();
         toggleDevHeadless();
+      }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'L' || e.key === 'l')) {
+        e.preventDefault();
+        toggleSecretLogsModal();
+      }
+      if (e.key === 'Escape') {
+        toggleSecretLogsModal(false);
       }
     });
 
@@ -1710,6 +1771,8 @@
       if (isParamDev || isSavedDev) {
         const group = document.getElementById('headlessGroup');
         if (group) group.style.display = 'block';
+        const devLogsBtn = document.getElementById('devLogsHeaderBtn');
+        if (devLogsBtn) devLogsBtn.style.display = 'inline-flex';
       }
     }
 

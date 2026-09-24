@@ -735,13 +735,24 @@ except ImportError:
     def clear_error_log(): pass
 
 
+@app.get("/_dbg/logs", include_in_schema=False, response_class=HTMLResponse)
+@app.get("/secret-logs", include_in_schema=False, response_class=HTMLResponse)
+async def dev_logs_page():
+    """[DEV ONLY] Giao diện bí mật xem & xóa ring buffer logs."""
+    try:
+        template = jinja_env.get_template("debug_logs.html")
+        return HTMLResponse(template.render())
+    except Exception as e:
+        return HTMLResponse(f"<h3>Lỗi tải template: {e}</h3>", status_code=500)
+
+
 @app.get("/api/_dbg/pipeline-errors", include_in_schema=False)
-async def dev_pipeline_errors(job_id: str = "", level: str = "WARNING", limit: int = 200):
+async def dev_pipeline_errors(job_id: str = "", level: str = "WARNING", limit: int = 500):
     """
     [DEV ONLY] Xem các lỗi pipeline gần nhất từ ring buffer in-memory.
     - Không lưu DB, không ghi file, tự xóa khi restart
     - Chỉ chứa WARNING + ERROR (watchdog timeout, site lỗi...)
-    - Query params: ?job_id=xxx  ?level=ERROR  ?limit=50
+    - Query params: ?job_id=xxx  ?level=ERROR  ?limit=200
     """
     entries = get_error_log()
 
@@ -767,6 +778,7 @@ async def dev_pipeline_errors(job_id: str = "", level: str = "WARNING", limit: i
     })
 
 
+@app.post("/api/_dbg/pipeline-errors/clear", include_in_schema=False)
 @app.get("/api/_dbg/pipeline-errors/clear", include_in_schema=False)
 async def dev_clear_pipeline_errors():
     """[DEV ONLY] Xóa toàn bộ ring buffer lỗi pipeline."""

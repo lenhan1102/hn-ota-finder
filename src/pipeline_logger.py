@@ -15,6 +15,11 @@ import time
 from collections import deque
 from datetime import datetime
 
+# Guarantee singleton across 'pipeline_logger' and 'src.pipeline_logger'
+if __name__ in sys.modules:
+    sys.modules.setdefault("pipeline_logger", sys.modules[__name__])
+    sys.modules.setdefault("src.pipeline_logger", sys.modules[__name__])
+
 # ─── Ring Buffer toàn cục — chỉ lưu WARNING + ERROR ─────────────────────────
 _MAX_ENTRIES = int(os.getenv("PIPELINE_LOG_MAX_ENTRIES", "500"))
 _error_ring: deque = deque(maxlen=_MAX_ENTRIES)
@@ -37,12 +42,30 @@ class _RingBufferHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord):
         try:
+            raw_msg = str(getattr(record, "msg", ""))
+            job_id = getattr(record, "job_id", "")
+            if not job_id and raw_msg:
+                import re
+                m = re.search(r"\[job=([^\]]+)\]", raw_msg)
+                if m:
+                    job_id = m.group(1)
+
+            step = getattr(record, "step", 0)
+            step_name = getattr(record, "step_name", "")
+            if (not step or not step_name) and raw_msg:
+                import re
+                m = re.search(r"\[B(\d+)/([^\]]+)\]", raw_msg)
+                if m:
+                    step = int(m.group(1))
+                    step_name = m.group(2)
+
             _error_ring.append({
                 "ts": datetime.fromtimestamp(record.created).strftime("%Y-%m-%d %H:%M:%S"),
                 "level": record.levelname,
                 "msg": self.format(record),
-                "job_id": getattr(record, "job_id", ""),
-                "step": getattr(record, "step", 0),
+                "job_id": job_id,
+                "step": step,
+                "step_name": step_name,
             })
         except Exception:
             pass
@@ -60,11 +83,19 @@ class PipelineLogger:
         self._step_name = ""
         self._step_start = time.time()
 
-    def debug(self, msg, *a, **kw):    self._logger.debug(self._fmt(msg), *a, **kw)
-    def info(self, msg, *a, **kw):     self._logger.info(self._fmt(msg), *a, **kw)
-    def warning(self, msg, *a, **kw):  self._logger.warning(self._fmt(msg), *a, **kw)
-    def error(self, msg, *a, **kw):    self._logger.error(self._fmt(msg), *a, **kw)
-    def critical(self, msg, *a, **kw): self._logger.critical(self._fmt(msg), *a, **kw)
+    def _extra(self, kw):
+        kw_copy = dict(kw)
+        extra = kw_copy.setdefault("extra", {})
+        extra.setdefault("job_id", self.job_id)
+        extra.setdefault("step", self._step)
+        extra.setdefault("step_name", self._step_name)
+        return kw_copy
+
+    def debug(self, msg, *a, **kw):    self._logger.debug(self._fmt(msg), *a, **self._extra(kw))
+    def info(self, msg, *a, **kw):     self._logger.info(self._fmt(msg), *a, **self._extra(kw))
+    def warning(self, msg, *a, **kw):  self._logger.warning(self._fmt(msg), *a, **self._extra(kw))
+    def error(self, msg, *a, **kw):    self._logger.error(self._fmt(msg), *a, **self._extra(kw))
+    def critical(self, msg, *a, **kw): self._logger.critical(self._fmt(msg), *a, **self._extra(kw))
 
     def _fmt(self, msg):
         prefix = f"[job={self.job_id}]" if self.job_id else ""

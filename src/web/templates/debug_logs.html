@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🔐 Pipeline Debug Logs — Dev Console</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-base: #070a12;
+      --bg-surface: #0f172a;
+      --bg-card: rgba(15, 23, 42, 0.75);
+      --bg-card-hover: rgba(30, 41, 59, 0.7);
+      --border: rgba(255, 255, 255, 0.08);
+      --border-light: rgba(255, 255, 255, 0.14);
+      --primary: #6366f1;
+      --primary-hover: #4f46e5;
+      --accent: #38bdf8;
+      --danger: #ef4444;
+      --danger-bg: rgba(239, 68, 68, 0.12);
+      --danger-border: rgba(239, 68, 68, 0.3);
+      --warning: #f59e0b;
+      --warning-bg: rgba(245, 158, 11, 0.12);
+      --warning-border: rgba(245, 158, 11, 0.3);
+      --success: #10b981;
+      --text-main: #f8fafc;
+      --text-sub: #94a3b8;
+      --text-dim: #64748b;
+      --radius: 12px;
+      --radius-sm: 8px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.12) 0px, transparent 40%),
+        radial-gradient(at 100% 0%, rgba(239, 68, 68, 0.08) 0px, transparent 40%),
+        radial-gradient(at 50% 100%, rgba(56, 189, 248, 0.08) 0px, transparent 40%);
+      background-attachment: fixed;
+    }
+
+    /* Top Dev Header */
+    header {
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(16px);
+      background: rgba(11, 17, 33, 0.85);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      padding: 14px 24px;
+    }
+
+    .header-inner {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .brand-section {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .dev-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: linear-gradient(135deg, rgba(239, 68, 68, 0.2), rgba(245, 158, 11, 0.2));
+      border: 1px solid rgba(239, 68, 68, 0.4);
+      color: #fca5a5;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .title-group h1 {
+      font-size: 17px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .title-group p {
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 8px 14px;
+      border-radius: var(--radius-sm);
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-decoration: none;
+      user-select: none;
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: var(--border);
+      color: var(--text-main);
+    }
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: var(--border-light);
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: #fff;
+    }
+    .btn-primary:hover {
+      background: var(--primary-hover);
+    }
+
+    .btn-danger {
+      background: var(--danger-bg);
+      border-color: var(--danger-border);
+      color: #fca5a5;
+    }
+    .btn-danger:hover {
+      background: rgba(239, 68, 68, 0.25);
+      color: #fff;
+      border-color: var(--danger);
+    }
+
+    .btn-sm {
+      padding: 5px 10px;
+      font-size: 12px;
+    }
+
+    /* Container */
+    main {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 24px;
+      width: 100%;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* Stats bar */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+    }
+
+    .stat-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      backdrop-filter: blur(12px);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .stat-card.danger {
+      border-color: var(--danger-border);
+      background: linear-gradient(135deg, rgba(239, 68, 68, 0.06), rgba(15, 23, 42, 0.8));
+    }
+    .stat-card.warning {
+      border-color: var(--warning-border);
+      background: linear-gradient(135deg, rgba(245, 158, 11, 0.06), rgba(15, 23, 42, 0.8));
+    }
+
+    .stat-label {
+      font-size: 12px;
+      color: var(--text-sub);
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .stat-val {
+      font-size: 24px;
+      font-weight: 800;
+      color: #fff;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .stat-val.red { color: #f87171; }
+    .stat-val.amber { color: #fbbf24; }
+    .stat-val.blue { color: #38bdf8; }
+
+    /* Control Panel */
+    .toolbar-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      backdrop-filter: blur(12px);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+    }
+
+    .toolbar-left, .toolbar-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .search-input {
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: #fff;
+      padding: 8px 12px;
+      font-size: 13px;
+      outline: none;
+      min-width: 240px;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+    .search-input:focus {
+      border-color: var(--primary);
+    }
+
+    .select-control {
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: #fff;
+      padding: 8px 12px;
+      font-size: 13px;
+      outline: none;
+      cursor: pointer;
+    }
+    .select-control:focus {
+      border-color: var(--primary);
+    }
+    .select-control option {
+      background: #0f172a;
+      color: #fff;
+    }
+
+    .pill-group {
+      display: inline-flex;
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 2px;
+    }
+    .pill-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-sub);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .pill-btn.active {
+      background: var(--primary);
+      color: #fff;
+    }
+
+    .auto-refresh-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text-sub);
+      user-select: none;
+      cursor: pointer;
+    }
+
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--success);
+      display: inline-block;
+      animation: pulse 1.8s infinite;
+    }
+    @keyframes pulse {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+      70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+    }
+
+    /* Logs Table / Viewer */
+    .table-container {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      backdrop-filter: blur(12px);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .table-header-info {
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    .logs-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .logs-table th {
+      background: rgba(0, 0, 0, 0.4);
+      padding: 10px 16px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-sub);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .logs-table td {
+      padding: 12px 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      vertical-align: top;
+    }
+
+    .logs-table tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .badge-level {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 5px;
+      white-space: nowrap;
+    }
+    .badge-error {
+      background: var(--danger-bg);
+      border: 1px solid var(--danger-border);
+      color: #fca5a5;
+    }
+    .badge-warning {
+      background: var(--warning-bg);
+      border: 1px solid var(--warning-border);
+      color: #fde047;
+    }
+
+    .badge-job {
+      display: inline-block;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: #a5b4fc;
+      background: rgba(99, 102, 241, 0.12);
+      border: 1px solid rgba(99, 102, 241, 0.25);
+      padding: 2px 7px;
+      border-radius: 4px;
+      cursor: pointer;
+      max-width: 140px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .badge-job:hover {
+      background: rgba(99, 102, 241, 0.25);
+      color: #fff;
+    }
+
+    .badge-step {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: #93c5fd;
+      background: rgba(56, 189, 248, 0.1);
+      border: 1px solid rgba(56, 189, 248, 0.2);
+      padding: 2px 6px;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+
+    .log-ts {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--text-dim);
+      white-space: nowrap;
+    }
+
+    .log-msg {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      color: #e2e8f0;
+      word-break: break-word;
+    }
+
+    .log-msg .hl-dead {
+      color: #f87171;
+      font-weight: 700;
+    }
+    .log-msg .hl-watchdog {
+      color: #f59e0b;
+      font-weight: 700;
+    }
+
+    .action-cell {
+      white-space: nowrap;
+      text-align: right;
+    }
+
+    .copy-btn {
+      background: transparent;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: var(--text-dim);
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .copy-btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+    }
+
+    /* Empty state */
+    .empty-state {
+      padding: 60px 20px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+    .empty-icon {
+      font-size: 42px;
+      filter: drop-shadow(0 0 16px rgba(16, 185, 129, 0.3));
+    }
+    .empty-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .empty-desc {
+      font-size: 13px;
+      color: var(--text-sub);
+      max-width: 480px;
+    }
+
+    /* Modal confirm */
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(8px);
+      z-index: 100;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .modal-overlay.active { display: flex; }
+
+    .modal-box {
+      background: #0f172a;
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius);
+      max-width: 460px;
+      width: 100%;
+      padding: 24px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .modal-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .modal-body {
+      font-size: 13px;
+      color: var(--text-sub);
+      line-height: 1.5;
+    }
+
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 8px;
+    }
+
+    /* Toast */
+    .toast-container {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .toast {
+      background: #1e293b;
+      border: 1px solid var(--border-light);
+      padding: 12px 18px;
+      border-radius: var(--radius-sm);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 500;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      animation: slideIn 0.2s ease forwards;
+    }
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="header-inner">
+      <div class="brand-section">
+        <span class="dev-badge">🔒 Dev Secret Only</span>
+        <div class="title-group">
+          <h1>🚨 Pipeline Error & Warning Logs</h1>
+          <p>In-memory ring buffer (tối đa 500 logs gần nhất, không ghi disk server)</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <span class="pulse-dot"></span>
+        <span style="font-size:12px; color:var(--text-sub);" id="lastUpdatedText">Đang tải...</span>
+        <a href="/" class="btn btn-secondary btn-sm">← Về Dashboard</a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Stats Row -->
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-label">Tổng Logs Trong Bộ Nhớ</div>
+        <div class="stat-val blue" id="statTotal">0 / 500</div>
+      </div>
+      <div class="stat-card danger">
+        <div class="stat-label">Lỗi (Errors)</div>
+        <div class="stat-val red" id="statError">0</div>
+      </div>
+      <div class="stat-card warning">
+        <div class="stat-label">Cảnh báo / Watchdog</div>
+        <div class="stat-val amber" id="statWarning">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Cơ chế lưu trữ</div>
+        <div class="stat-val" style="font-size:14px; font-weight:600; color:#10b981; padding-top:4px;">
+          RAM Ring Buffer (Safe)
+        </div>
+      </div>
+    </div>
+
+    <!-- Toolbar -->
+    <div class="toolbar-card">
+      <div class="toolbar-left">
+        <input type="text" id="searchInput" class="search-input" placeholder="🔍 Tìm kiếm trong log (domain, message...)" oninput="applyFilters()">
+        
+        <div class="pill-group">
+          <button class="pill-btn active" data-level="ALL" onclick="setLevelFilter('ALL')">Tất cả</button>
+          <button class="pill-btn" data-level="WARNING" onclick="setLevelFilter('WARNING')">⚠️ Warning</button>
+          <button class="pill-btn" data-level="ERROR" onclick="setLevelFilter('ERROR')">❌ Error</button>
+        </div>
+
+        <select id="jobFilter" class="select-control" onchange="applyFilters()">
+          <option value="">Tất cả Jobs</option>
+        </select>
+      </div>
+
+      <div class="toolbar-right">
+        <label class="auto-refresh-toggle">
+          <input type="checkbox" id="autoRefreshCheck" checked onchange="toggleAutoRefresh()">
+          <span>Tự động tải lại (3s)</span>
+        </label>
+
+        <button class="btn btn-secondary btn-sm" onclick="fetchLogs(true)">
+          🔄 Làm mới
+        </button>
+
+        <button class="btn btn-secondary btn-sm" onclick="exportJson()">
+          📥 Xuất JSON
+        </button>
+
+        <button class="btn btn-danger btn-sm" onclick="openClearModal()">
+          🗑️ Xóa sạch log
+        </button>
+      </div>
+    </div>
+
+    <!-- Logs Table Container -->
+    <div class="table-container">
+      <div class="table-header-info">
+        <span id="showingCountText">Hiển thị 0 entries</span>
+        <span>Ring buffer tự động luân chuyển khi vượt quá 500 mục</span>
+      </div>
+
+      <div id="tableWrapper" style="overflow-x:auto;">
+        <table class="logs-table">
+          <thead>
+            <tr>
+              <th style="width: 140px;">Thời gian</th>
+              <th style="width: 100px;">Cấp độ</th>
+              <th style="width: 150px;">Job ID</th>
+              <th style="width: 130px;">Bước</th>
+              <th>Nội dung Log</th>
+              <th style="width: 70px; text-align:right;">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody id="logsTbody">
+            <!-- Dynamic entries -->
+          </tbody>
+        </table>
+      </div>
+
+      <div class="empty-state" id="emptyState" style="display:none;">
+        <div class="empty-icon">🎉</div>
+        <div class="empty-title">Không có lỗi hoặc cảnh báo nào</div>
+        <div class="empty-desc">Bộ nhớ đệm ring buffer hiện đang trống hoặc không có log nào khớp với bộ lọc hiện tại.</div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Modal Xác Nhận Xóa Log -->
+  <div class="modal-overlay" id="clearModal">
+    <div class="modal-box">
+      <div class="modal-title">
+        <span>🗑️</span> Xác nhận xóa sạch bộ đệm log?
+      </div>
+      <div class="modal-body">
+        Hành động này sẽ xóa toàn bộ các mục lỗi và cảnh báo đang lưu trong bộ nhớ RAM (ring buffer).<br><br>
+        <strong style="color:#fca5a5;">Lưu ý:</strong> Hành động này không thể hoàn tác.
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeClearModal()">Hủy</button>
+        <button class="btn btn-danger" onclick="confirmClearLogs()">Xóa ngay</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script>
+    let rawEntries = [];
+    let currentLevel = 'ALL';
+    let autoRefreshTimer = null;
+
+    // Toast
+    function showToast(msg) {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = 'toast';
+      toast.textContent = msg;
+      container.appendChild(toast);
+      setTimeout(() => toast.remove(), 2500);
+    }
+
+    // Level filter
+    function setLevelFilter(lvl) {
+      currentLevel = lvl;
+      document.querySelectorAll('.pill-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.level === lvl);
+      });
+      applyFilters();
+    }
+
+    // Auto refresh
+    function toggleAutoRefresh() {
+      const checked = document.getElementById('autoRefreshCheck').checked;
+      if (checked) {
+        startAutoRefresh();
+      } else {
+        stopAutoRefresh();
+      }
+    }
+
+    function startAutoRefresh() {
+      stopAutoRefresh();
+      autoRefreshTimer = setInterval(() => fetchLogs(false), 3000);
+    }
+
+    function stopAutoRefresh() {
+      if (autoRefreshTimer) {
+        clearInterval(autoRefreshTimer);
+        autoRefreshTimer = null;
+      }
+    }
+
+    // Modal
+    function openClearModal() {
+      document.getElementById('clearModal').classList.add('active');
+    }
+    function closeClearModal() {
+      document.getElementById('clearModal').classList.remove('active');
+    }
+
+    // Fetch logs from API
+    async function fetchLogs(manual = false) {
+      try {
+        const res = await fetch('/api/_dbg/pipeline-errors?limit=500&level=WARNING');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        
+        rawEntries = data.entries || [];
+        updateJobFilterOptions(rawEntries);
+        applyFilters();
+
+        const now = new Date();
+        document.getElementById('lastUpdatedText').textContent = 'Cập nhật lúc: ' + now.toLocaleTimeString();
+
+        if (manual) showToast('Đã làm mới dữ liệu (' + rawEntries.length + ' logs)');
+      } catch (err) {
+        console.error('Lỗi tải debug logs:', err);
+        document.getElementById('lastUpdatedText').textContent = 'Lỗi kết nối API';
+      }
+    }
+
+    // Update Job filter dropdown options
+    function updateJobFilterOptions(entries) {
+      const sel = document.getElementById('jobFilter');
+      const currentVal = sel.value;
+      const jobSet = new Set();
+      entries.forEach(e => { if (e.job_id) jobSet.add(e.job_id); });
+
+      let html = '<option value="">Tất cả Jobs (' + entries.length + ')</option>';
+      jobSet.forEach(j => {
+        const count = entries.filter(e => e.job_id === j).length;
+        html += `<option value="${j}">${j} (${count})</option>`;
+      });
+      sel.innerHTML = html;
+      sel.value = currentVal;
+    }
+
+    // Quick filter job by clicking badge
+    function filterByJob(jobId) {
+      const sel = document.getElementById('jobFilter');
+      sel.value = jobId;
+      applyFilters();
+      showToast('Lọc theo Job: ' + jobId);
+    }
+
+    // Apply filters & render
+    function applyFilters() {
+      const q = document.getElementById('searchInput').value.trim().toLowerCase();
+      const selectedJob = document.getElementById('jobFilter').value;
+
+      // Stats
+      let totalErr = 0;
+      let totalWarn = 0;
+      rawEntries.forEach(e => {
+        if (e.level === 'ERROR' || e.level === 'CRITICAL') totalErr++;
+        else totalWarn++;
+      });
+      document.getElementById('statTotal').textContent = rawEntries.length + ' / 500';
+      document.getElementById('statError').textContent = totalErr;
+      document.getElementById('statWarning').textContent = totalWarn;
+
+      // Filtered
+      const filtered = rawEntries.filter(e => {
+        if (currentLevel === 'ERROR' && e.level !== 'ERROR' && e.level !== 'CRITICAL') return false;
+        if (currentLevel === 'WARNING' && e.level !== 'WARNING') return false;
+        if (selectedJob && e.job_id !== selectedJob) return false;
+        if (q) {
+          const matchMsg = (e.msg || '').toLowerCase().includes(q);
+          const matchJob = (e.job_id || '').toLowerCase().includes(q);
+          const matchStep = (e.step_name || '').toLowerCase().includes(q);
+          if (!matchMsg && !matchJob && !matchStep) return false;
+        }
+        return true;
+      });
+
+      renderTable(filtered);
+    }
+
+    // Render Table rows
+    function renderTable(entries) {
+      const tbody = document.getElementById('logsTbody');
+      const empty = document.getElementById('emptyState');
+      const countText = document.getElementById('showingCountText');
+
+      countText.textContent = `Hiển thị ${entries.length} / ${rawEntries.length} entries`;
+
+      if (!entries.length) {
+        tbody.innerHTML = '';
+        empty.style.display = 'flex';
+        return;
+      }
+      empty.style.display = 'none';
+
+      // Render reversed (mới nhất lên trên)
+      const list = [...entries].reverse();
+
+      tbody.innerHTML = list.map(e => {
+        const isErr = (e.level === 'ERROR' || e.level === 'CRITICAL');
+        const lvlClass = isErr ? 'badge-error' : 'badge-warning';
+        const lvlIcon = isErr ? '❌' : '⚠️';
+        
+        let msgHtml = escapeHtml(e.msg || '');
+        msgHtml = msgHtml.replace(/(DEAD)/g, '<span class="hl-dead">$1</span>');
+        msgHtml = msgHtml.replace(/(WATCHDOG|force-kill)/g, '<span class="hl-watchdog">$1</span>');
+
+        const stepText = e.step ? `B${e.step}${e.step_name ? '/' + escapeHtml(e.step_name) : ''}` : '-';
+        const jobBadge = e.job_id 
+          ? `<span class="badge-job" onclick="filterByJob('${escapeHtml(e.job_id)}')" title="Lọc job này">${escapeHtml(e.job_id)}</span>`
+          : '<span style="color:var(--text-dim);">-</span>';
+
+        return `
+          <tr>
+            <td class="log-ts">${escapeHtml(e.ts || '')}</td>
+            <td><span class="badge-level ${lvlClass}">${lvlIcon} ${escapeHtml(e.level || '')}</span></td>
+            <td>${jobBadge}</td>
+            <td>${e.step ? `<span class="badge-step">${stepText}</span>` : '<span style="color:var(--text-dim);">-</span>'}</td>
+            <td class="log-msg">${msgHtml}</td>
+            <td class="action-cell">
+              <button class="copy-btn" onclick="copyLog('${escapeAttr(e.msg || '')}')" title="Sao chép log">📋 Copy</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function copyLog(text) {
+      navigator.clipboard.writeText(text).then(() => {
+        showToast('Đã chép nội dung log vào clipboard!');
+      });
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]);
+    }
+    function escapeAttr(str) {
+      return str.replace(/['"\\]/g, '\\$&').replace(/\n/g, ' ');
+    }
+
+    // Confirm Clear Logs
+    async function confirmClearLogs() {
+      try {
+        const res = await fetch('/api/_dbg/pipeline-errors/clear');
+        const data = await res.json();
+        closeClearModal();
+        showToast('✅ Đã xóa sạch toàn bộ log trong bộ đệm!');
+        fetchLogs();
+      } catch (err) {
+        alert('Lỗi xóa log: ' + err);
+      }
+    }
+
+    // Export JSON
+    function exportJson() {
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(rawEntries, null, 2));
+      const a = document.createElement('a');
+      a.setAttribute("href", dataStr);
+      a.setAttribute("download", `pipeline_errors_${new Date().toISOString().slice(0, 10)}.json`);
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      showToast('Đã tải xuống file JSON debug logs!');
+    }
+
+    // Initialize
+    window.addEventListener('load', () => {
+      fetchLogs();
+      startAutoRefresh();
+    });
+  </script>
+</body>
+</html>
