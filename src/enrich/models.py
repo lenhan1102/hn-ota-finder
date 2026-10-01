@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
@@ -60,12 +60,29 @@ class SingleEnrichRequest(BaseModel):
     company_name: str
     domain: str
     country: Optional[str] = "vietnam"
+    lead_id: Optional[str] = None
     options: Optional[EnrichmentOptions] = Field(default_factory=EnrichmentOptions)
 
 
 class BatchEnrichRequest(BaseModel):
     leads: List[SingleEnrichRequest]
     options: Optional[EnrichmentOptions] = Field(default_factory=EnrichmentOptions)
+
+
+class EnrichJobCreateRequest(BaseModel):
+    mode: str = Field(default="single", description="'single' hoặc 'batch'")
+    lead: Optional[SingleEnrichRequest] = None
+    leads: Optional[List[SingleEnrichRequest]] = None
+    options: Optional[EnrichmentOptions] = None
+
+
+class DebugStep(BaseModel):
+    """Một bước trong quá trình Enrich — dùng để FE hiển thị debug trace."""
+    step: str = Field(description="Tên bước, vd: discovery, email_resolution, website_fallback")
+    status: str = Field(description="success | failed | skipped | no_result")
+    detail: str = Field(description="Mô tả ngắn gọn kết quả")
+    duration_ms: Optional[float] = Field(default=None, description="Thời gian xử lý (ms)")
+    data: Optional[Dict[str, Any]] = Field(default=None, description="Dữ liệu kèm theo")
 
 
 class EnrichmentResult(BaseModel):
@@ -82,6 +99,26 @@ class EnrichmentResult(BaseModel):
     provider_used: str
     execution_time_seconds: float = 0.0
     error_message: Optional[str] = None
+    methods_attempted: List[str] = Field(
+        default_factory=list,
+        description="Danh sách các phương thức và công cụ đã thực tế chạy trong pipeline"
+    )
+    primary_source: Optional[str] = Field(
+        default=None,
+        description="Nguồn gốc thực sự của email chính (hunter | apollo | website_fallback | google_dorking)"
+    )
+    rule_description: Optional[str] = Field(
+        default=None,
+        description="Mô tả chi tiết quy tắc BR-01 đã áp dụng"
+    )
+    logs: List[str] = Field(
+        default_factory=list,
+        description="Nhật ký chi tiết quá trình quét để FE hiển thị"
+    )
+    debug_trace: List[DebugStep] = Field(
+        default_factory=list,
+        description="Các bước thực hiện theo thứ tự, dùng để FE hiển thị debug panel"
+    )
 
 
 class EnrichmentOptionsMetadata(BaseModel):

@@ -6,6 +6,7 @@ from .models import (
     EnrichmentOptions,
     SingleEnrichRequest,
     BatchEnrichRequest,
+    EnrichJobCreateRequest,
     EnrichmentResult,
     EnrichmentOptionsMetadata,
 )
@@ -19,6 +20,7 @@ __all__ = [
     "EnrichmentOptions",
     "SingleEnrichRequest",
     "BatchEnrichRequest",
+    "EnrichJobCreateRequest",
     "EnrichmentResult",
     "EnrichmentOptionsMetadata",
     "enrich_single_lead",

@@ -8,6 +8,7 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
+from typing import Optional, List, Dict, Any
 
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Request
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, StreamingResponse
@@ -37,8 +38,15 @@ from db.queries import (
 from enrich import (
     SingleEnrichRequest,
     BatchEnrichRequest,
+    EnrichJobCreateRequest,
     EnrichmentResult,
+    EnrichmentOptions,
     enrich_single_lead,
+)
+from db.enrich_queries import (
+    save_enrich_result,
+    get_enrich_result,
+    list_enrich_results,
 )
 
 
@@ -99,6 +107,7 @@ jinja_env = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR)))
 
 # In-memory jobs tracking (dùng làm fast cache song song với DB)
 JOBS = {}
+ENRICH_JOBS = {}
 
 
 class JobCreateRequest(BaseModel):
@@ -198,6 +207,152 @@ def run_job_task(job_id: str, payload: dict):
             update_job_status(job_id, "failed", error_message=str(e))
         except Exception:
             pass
+
+
+async def run_enrich_job_task(job_id: str, payload_data: dict):
+    job = ENRICH_JOBS.get(job_id)
+    if not job:
+        return
+
+    job["status"] = "running"
+    job["started_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    mode = payload_data.get("mode", "single")
+
+    try:
+        if mode == "single":
+            lead_dict = payload_data.get("lead")
+            if not lead_dict and payload_data.get("leads"):
+                leads = payload_data["leads"]
+                if len(leads) > 0:
+                    lead_dict = leads[0]
+            if not lead_dict:
+                raise ValueError("Không tìm thấy thông tin đại lý cần enrich")
+
+            job_options = payload_data.get("options")
+            lead_req = SingleEnrichRequest(**lead_dict)
+            if job_options:
+                if isinstance(job_options, dict):
+                    lead_req.options = EnrichmentOptions(**job_options)
+                elif isinstance(job_options, EnrichmentOptions):
+                    lead_req.options = job_options
+
+            company = lead_req.company_name
+
+            def on_progress(sub_pct: int, msg: str, stage: Optional[str] = None):
+                if job.get("cancelled"):
+                    raise Exception("Tiến trình đã bị huỷ bởi người dùng.")
+                t_str = time.strftime("%H:%M:%S")
+                job["percent"] = sub_pct
+                if stage:
+                    job["stage"] = stage
+                job["message"] = msg
+                job["logs"].append(f"[{t_str}] {msg}")
+                if len(job["logs"]) > 300:
+                    job["logs"] = job["logs"][-300:]
+
+            res = await enrich_single_lead(lead_req, progress_callback=on_progress)
+
+            # Tự động lưu vào MySQL nếu có lead_id
+            lead_id = getattr(lead_req, "lead_id", None) or payload_data.get("lead_id")
+            if lead_id:
+                try:
+                    save_enrich_result(lead_id=lead_id, result=res)
+                    job["logs"].append(f"[{time.strftime('%H:%M:%S')}] Đã lưu kết quả vào database cho lead_id={lead_id}")
+                except Exception as ex:
+                    job["logs"].append(f"[{time.strftime('%H:%M:%S')}] Cảnh báo lưu DB: {ex}")
+
+            job["status"] = "completed"
+            job["percent"] = 100
+            job["processed"] = 1
+            job["finished_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            res_dict = res.model_dump()
+            res_dict["logs"] = list(job.get("logs", []))
+            job["result"] = res_dict
+            job["message"] = f"Hoàn tất làm giàu dữ liệu cho {res.company_name} ({res.status})"
+
+        else:  # batch mode
+            leads_data = payload_data.get("leads") or []
+            if not leads_data:
+                raise ValueError("Danh sách đại lý rỗng")
+
+            total = len(leads_data)
+            results = []
+            tier_counts = {1: 0, 2: 0, 3: 0, 4: 0}
+            success_count = 0
+            missing_count = 0
+
+            job_options = payload_data.get("options")
+            for idx, item in enumerate(leads_data):
+                if job.get("cancelled"):
+                    raise Exception("Tiến trình đã bị huỷ bởi người dùng.")
+
+                lead_req = SingleEnrichRequest(**item)
+                if job_options:
+                    if isinstance(job_options, dict):
+                        lead_req.options = EnrichmentOptions(**job_options)
+                    elif isinstance(job_options, EnrichmentOptions):
+                        lead_req.options = job_options
+
+                company = lead_req.company_name
+
+                def on_sub_progress(sub_pct: int, msg: str, stage: Optional[str] = None):
+                    if job.get("cancelled"):
+                        raise Exception("Tiến trình đã bị huỷ bởi người dùng.")
+                    overall_pct = round((idx / total) * 100 + (sub_pct / 100) * (100 / total))
+                    job["percent"] = min(overall_pct, 99)
+                    if stage:
+                        job["stage"] = stage
+                    job["message"] = f"[{idx+1}/{total}] {company}: {msg}"
+                    t_str = time.strftime("%H:%M:%S")
+                    job["logs"].append(f"[{t_str}] [{idx+1}/{total}] {company}: {msg}")
+                    if len(job["logs"]) > 500:
+                        job["logs"] = job["logs"][-500:]
+
+                res = await enrich_single_lead(lead_req, progress_callback=on_sub_progress)
+                results.append(res.model_dump())
+
+                lead_id = getattr(lead_req, "lead_id", None)
+                if lead_id:
+                    try:
+                        save_enrich_result(lead_id=lead_id, result=res)
+                    except Exception as ex:
+                        job["logs"].append(f"[{time.strftime('%H:%M:%S')}] Cảnh báo lưu DB cho {lead_id}: {ex}")
+
+                if res.status == "success":
+                    success_count += 1
+                    if res.primary_contact:
+                        t = res.primary_contact.tier
+                        tier_counts[t] = tier_counts.get(t, 0) + 1
+                else:
+                    missing_count += 1
+
+                job["processed"] = idx + 1
+                job["percent"] = round(((idx + 1) / total) * 100)
+
+            job["status"] = "completed"
+            job["percent"] = 100
+            job["finished_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            job["message"] = f"Đã hoàn thành enrich cho {total} đại lý ({success_count} thành công, {missing_count} thiếu contact)"
+            job["result"] = {
+                "total": total,
+                "success": success_count,
+                "missing_contact": missing_count,
+                "tier_summary": {
+                    "tier_1": tier_counts.get(1, 0),
+                    "tier_2": tier_counts.get(2, 0),
+                    "tier_3": tier_counts.get(3, 0),
+                    "tier_4": tier_counts.get(4, 0),
+                },
+                "results": results
+            }
+
+    except Exception as e:
+        t_err = time.strftime("%H:%M:%S")
+        is_cancelled = "huỷ" in str(e).lower()
+        job["status"] = "cancelled" if is_cancelled else "failed"
+        job["error"] = str(e)
+        job["finished_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        job["logs"].append(f"[{t_err}] [ERROR] {e}")
 
 
 def is_local_env() -> bool:
@@ -818,16 +973,53 @@ async def get_enrichment_options():
 
 
 @app.post("/api/enrich/lead", response_model=EnrichmentResult)
-async def enrich_lead_endpoint(req: SingleEnrichRequest):
+async def enrich_lead_endpoint(
+    req: SingleEnrichRequest,
+    lead_id: Optional[str] = None
+):
     """
     API làm giàu thông tin cho 1 đại lý cụ thể.
-    FE truyền lên company_name, domain, country và các options tùy chọn.
+    - Nếu truyền `lead_id` (query param), kết quả sẽ được lưu vào MySQL.
+    - FE có thể gọi GET /api/enrich/result/{lead_id} để lấy lại sau.
     """
     try:
         result = await enrich_single_lead(req)
+        if lead_id:
+            save_enrich_result(lead_id=lead_id, result=result)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi khi thực hiện enrichment: {str(e)}")
+
+
+@app.get("/api/enrich/result/{lead_id}")
+async def get_enrich_result_endpoint(lead_id: str):
+    """
+    Lấy kết quả enrich mới nhất của một lead từ MySQL.
+    """
+    data = get_enrich_result(lead_id=lead_id)
+    if not data:
+        raise HTTPException(status_code=404, detail=f"Không tìm thấy kết quả enrich cho lead_id={lead_id}")
+    return data
+
+
+@app.get("/api/enrich/list")
+async def list_enrich_results_endpoint(
+    limit: int = 50,
+    offset: int = 0,
+    status: Optional[str] = None,
+    domain: Optional[str] = None,
+):
+    """
+    Liệt kê kết quả enrich (FE dùng cho trang quản lý).
+    Query params: limit, offset, status (success|missing_contact), domain
+    """
+    rows = list_enrich_results(
+        limit=limit,
+        offset=offset,
+        status_filter=status,
+        domain_filter=domain,
+    )
+    return {"total": len(rows), "items": rows}
 
 
 @app.post("/api/enrich/batch")
@@ -867,6 +1059,102 @@ async def enrich_batch_endpoint(req: BatchEnrichRequest):
         },
         "results": results
     }
+
+
+@app.post("/api/enrich/jobs")
+async def create_enrich_job(req: EnrichJobCreateRequest, bg_tasks: BackgroundTasks):
+    """
+    Tạo một Enrich Job chạy nền bất đồng bộ (tránh HTTP timeout).
+    Hỗ trợ cả chế độ 'single' và 'batch'.
+    Trả về job_id ngay lập tức để FE polling tiến trình %.
+    """
+    job_id = str(uuid.uuid4())
+    t_now = time.strftime("%H:%M:%S")
+
+    # Xác định số lượng leads
+    total_leads = 1
+    if req.mode == "batch" and req.leads:
+        total_leads = len(req.leads)
+    elif req.lead:
+        total_leads = 1
+
+    job_data = {
+        "id": job_id,
+        "mode": req.mode,
+        "status": "pending",
+        "percent": 0,
+        "stage": "init",
+        "stage_name": "Khởi tạo",
+        "message": "Đang đưa yêu cầu enrich vào hàng đợi...",
+        "total": total_leads,
+        "processed": 0,
+        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "started_at": None,
+        "finished_at": None,
+        "error": None,
+        "result": None,
+        "logs": [f"[{t_now}] Đã tiếp nhận yêu cầu enrich (chế độ {req.mode}, {total_leads} đại lý)"],
+    }
+    ENRICH_JOBS[job_id] = job_data
+
+    payload_data = req.model_dump()
+    bg_tasks.add_task(run_enrich_job_task, job_id, payload_data)
+
+    return {
+        "job_id": job_id,
+        "status": "pending",
+        "mode": req.mode,
+        "total": total_leads,
+        "message": "Đã tạo tiến trình làm giàu thông tin ngầm."
+    }
+
+
+@app.get("/api/enrich/jobs/{job_id}")
+async def get_enrich_job_status(job_id: str):
+    """
+    Lấy thông tin tiến độ, phần trăm (%), logs và kết quả của một Enrich Job.
+    """
+    job = ENRICH_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Không tìm thấy enrich job {job_id}")
+
+    return {
+        "id": job["id"],
+        "mode": job.get("mode", "single"),
+        "status": job["status"],
+        "percent": job.get("percent", 0),
+        "stage": job.get("stage", "init"),
+        "message": job.get("message", ""),
+        "total": job.get("total", 0),
+        "processed": job.get("processed", 0),
+        "created_at": job.get("created_at"),
+        "started_at": job.get("started_at"),
+        "finished_at": job.get("finished_at"),
+        "error": job.get("error"),
+        "result": job.get("result"),
+        "logs": job.get("logs", [])[-50:],
+    }
+
+
+@app.post("/api/enrich/jobs/{job_id}/cancel")
+async def cancel_enrich_job(job_id: str):
+    """
+    Hủy một Enrich Job đang chạy.
+    """
+    job = ENRICH_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Không tìm thấy enrich job {job_id}")
+
+    if job["status"] in ["completed", "failed", "cancelled"]:
+        return {"status": job["status"], "message": "Job đã kết thúc, không thể huỷ."}
+
+    job["cancelled"] = True
+    job["status"] = "cancelled"
+    job["message"] = "Tiến trình đã bị người dùng hủy."
+    job["finished_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    job["logs"].append(f"[{time.strftime('%H:%M:%S')}] Người dùng đã bấm dừng tác vụ.")
+
+    return {"status": "cancelled", "job_id": job_id, "message": "Đã gửi tín hiệu huỷ tiến trình."}
 
 
 if __name__ == "__main__":
