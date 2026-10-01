@@ -1,22 +1,14 @@
-"""
-email_resolver.py — Tìm email cá nhân cho một contact person.
-
-Hỗ trợ 3 provider theo thứ tự ưu tiên:
-  1. Hunter.io  (HUNTER_API_KEY)
-  2. Apollo.io  (APOLLO_API_KEY)
-  3. Internal SMTP Pattern — miễn phí, tự sinh pattern phổ biến
-"""
-
 import os
 import re
 import socket
 from typing import Dict, List, Optional
-
 import httpx
 
 
 def clean_domain(domain: str) -> str:
     """Làm sạch domain bỏ http://, https://, www., và các đường dẫn con."""
+    if not domain:
+        return ""
     d = domain.strip().lower()
     d = re.sub(r"^https?://", "", d)
     d = re.sub(r"^www\.", "", d)
@@ -24,178 +16,170 @@ def clean_domain(domain: str) -> str:
     return d
 
 
-async def resolve_via_hunter(
-    first_name: str,
-    last_name: str,
-    domain: str,
-    api_key: str = "",
-) -> Optional[Dict]:
+async def resolve_via_hunter(first_name: str, last_name: str, domain: str) -> Optional[Dict]:
     """
     Gọi Hunter.io Email Finder API.
     GET https://api.hunter.io/v2/email-finder
     """
-    api_key = api_key or os.getenv("HUNTER_API_KEY", "").strip()
+    api_key = os.getenv("HUNTER_API_KEY", "").strip()
     if not api_key:
         return None
 
     clean_d = clean_domain(domain)
+    if not clean_d or not first_name:
+        return None
+
     url = "https://api.hunter.io/v2/email-finder"
     params = {
         "domain": clean_d,
         "first_name": first_name,
-        "last_name": last_name,
+        "last_name": last_name or "",
         "api_key": api_key,
     }
+
     try:
-        async with httpx.AsyncClient() as client:
-            res = await client.get(url, params=params, timeout=8.0)
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            res = await client.get(url, params=params)
+            print(f"[Resolver] Hunter HTTP {res.status_code} cho {first_name} {last_name}@{clean_d}")
             if res.status_code == 200:
                 data = res.json().get("data", {})
-                email = data.get("email", "")
-                score = float(data.get("score", 0))
-                verification = data.get("verification", {})
-                if email and score >= 80:
+                email = data.get("email")
+                if email:
+                    score = float(data.get("score") or 80.0)
+                    verification = data.get("verification", {}).get("status", "verified")
+                    print(f"[Resolver] Hunter ✔ {email} (score={score})")
                     return {
                         "email": email,
-                        "confidence_score": score / 100.0,
-                        "provider": "hunter",
-                        "verification": verification,
+                        "score": score,
+                        "status": verification,
+                        "provider": "hunter"
                     }
+                else:
+                    print(f"[Resolver] Hunter: không tìm thấy email (domain chưa có trong database)")
+            else:
+                print(f"[Resolver] Hunter lỗi: {res.text[:200]}")
     except Exception as e:
-        print(f"[email_resolver] Hunter.io lỗi: {e}")
+        print(f"[Resolver] Hunter API error: {e}")
+
     return None
 
 
-async def resolve_via_apollo(
-    first_name: str,
-    last_name: str,
-    domain: str,
-    api_key: str = "",
-) -> Optional[Dict]:
+async def resolve_via_apollo(first_name: str, last_name: str, domain: str) -> Optional[Dict]:
     """
     Gọi Apollo.io People Match API.
     POST https://api.apollo.io/v1/people/match
     """
-    api_key = api_key or os.getenv("APOLLO_API_KEY", "").strip()
+    api_key = os.getenv("APOLLO_API_KEY", "").strip()
     if not api_key:
         return None
 
     clean_d = clean_domain(domain)
+    if not clean_d or not first_name:
+        return None
+
     url = "https://api.apollo.io/v1/people/match"
+    # Apollo yêu cầu API key trong header X-Api-Key, KHÔNG đặt trong body
     payload = {
-        "api_key": api_key,
         "first_name": first_name,
-        "last_name": last_name,
-        "domain": clean_d,
-        "reveal_personal_emails": False,
+        "last_name": last_name or "",
+        "domain": clean_d
     }
+
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=8.0) as client:
             res = await client.post(
                 url,
                 json=payload,
-                headers={"Content-Type": "application/json"},
-                timeout=8.0,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Api-Key": api_key
+                }
             )
+            print(f"[Resolver] Apollo HTTP {res.status_code} cho {first_name} {last_name}@{clean_d}")
             if res.status_code == 200:
                 data = res.json()
-                person = data.get("person", {})
-                email = person.get("email", "")
-                status = person.get("email_status", "")
+                person = data.get("person") or {}
+                email = person.get("email")
                 if email:
+                    status = person.get("email_status", "verified")
+                    print(f"[Resolver] Apollo ✔ {email} (status={status})")
                     return {
                         "email": email,
-                        "confidence_score": 0.85 if status == "verified" else 0.6,
-                        "provider": "apollo",
-                        "email_status": status,
+                        "score": 90.0 if status == "verified" else 70.0,
+                        "status": status,
+                        "provider": "apollo"
                     }
+                else:
+                    print(f"[Resolver] Apollo: không có email cho người này")
+            else:
+                print(f"[Resolver] Apollo lỗi: {res.text[:200]}")
     except Exception as e:
-        print(f"[email_resolver] Apollo.io lỗi: {e}")
+        print(f"[Resolver] Apollo API error: {e}")
+
     return None
+
 
 
 def check_mx_records(domain: str) -> bool:
     """Kiểm tra domain có bản ghi MX để nhận mail hay không."""
     try:
+        # Kiểm tra socket getaddrinfo
         socket.gethostbyname(domain)
         return True
     except Exception:
         return False
 
 
-def resolve_via_internal_smtp(
-    first_name: str,
-    last_name: str,
-    domain: str,
-) -> Optional[Dict]:
+async def resolve_via_internal_smtp(first_name: str, last_name: str, domain: str) -> Optional[Dict]:
     """
-    Tự sinh Pattern kết hợp kiểm tra tính hợp lệ của domain (100% Miễn phí).
-    Tạo các mẫu phổ biến: first.last@, first@, f.last@.
+    [ĐÃ TẮT] Bộ sinh pattern email nội bộ (first.last@domain).
+    Không sử dụng vì dễ tạo ra email giả, gây mất uy tín khi gửi outreach.
+    Chỉ giữ lại hàm để tránh lỗi import, nhưng luôn trả về None.
     """
-    clean_d = clean_domain(domain)
-    fn = re.sub(r"[^a-zA-Z0-9]", "", first_name).lower()
-    ln = re.sub(r"[^a-zA-Z0-9]", "", last_name).lower()
-
-    candidates = []
-    if fn and ln:
-        candidates = [
-            f"{fn}.{ln}@{clean_d}",
-            f"{fn}@{clean_d}",
-            f"{fn[0]}.{ln}@{clean_d}",
-            f"{fn}{ln}@{clean_d}",
-            f"{fn}_{ln}@{clean_d}",
-        ]
-    elif fn:
-        candidates = [f"{fn}@{clean_d}"]
-
-    if not candidates:
-        return None
-
-    has_mail_host = check_mx_records(clean_d)
-    best_candidate = candidates[0]
-
-    return {
-        "email": best_candidate,
-        "confidence_score": 0.75 if has_mail_host else 0.40,
-        "provider": "internal_smtp",
-        "status": "guessed" if has_mail_host else "unverified",
-        "all_patterns": candidates,
-    }
+    return None
 
 
 async def resolve_contact_email(
     first_name: str,
     last_name: str,
     domain: str,
-    provider: str = "auto",
+    provider: str = "auto"
 ) -> Optional[Dict]:
     """
     Điều phối việc lấy email theo Option mà người dùng FE đã chọn:
     - 'hunter': Chỉ gọi Hunter.io
     - 'apollo': Chỉ gọi Apollo.io
-    - 'internal_smtp': Dùng bộ sinh pattern nội bộ
-    - 'auto': Thử lần lượt Hunter -> Apollo -> Internal SMTP
+    - 'auto': Thử lần lượt Hunter -> Apollo
+    KHÔNG dùng internal_smtp pattern để tránh tạo email giả.
+    Nếu không có API nào trả kết quả thực → trả về None.
     """
-    prov = provider.lower()
+    prov = (provider or "auto").lower()
 
     if prov == "hunter":
+        # Chỉ gọi Hunter, không fallback sang pattern giả
         return await resolve_via_hunter(first_name, last_name, domain)
 
-    if prov == "apollo":
+    elif prov == "apollo":
+        # Chỉ gọi Apollo, không fallback sang pattern giả
         return await resolve_via_apollo(first_name, last_name, domain)
 
-    if prov == "internal_smtp":
-        return resolve_via_internal_smtp(first_name, last_name, domain)
+    elif prov == "internal_smtp":
+        # internal_smtp đã bị tắt — trả về None
+        print(f"[Resolver] internal_smtp bị vô hiệu hóa, không sinh email giả cho {first_name} {last_name}@{domain}")
+        return None
 
-    # AUTO: thử theo thứ tự ưu tiên
-    if os.getenv("HUNTER_API_KEY", "").strip():
-        res = await resolve_via_hunter(first_name, last_name, domain)
-        if res and res.get("email"):
-            return res
+    else:  # auto
+        # 1. Thử Hunter nếu có cấu hình key
+        if os.getenv("HUNTER_API_KEY"):
+            h_res = await resolve_via_hunter(first_name, last_name, domain)
+            if h_res and h_res.get("email"):
+                return h_res
 
-    if os.getenv("APOLLO_API_KEY", "").strip():
-        res = await resolve_via_apollo(first_name, last_name, domain)
-        if res and res.get("email"):
-            return res
+        # 2. Thử Apollo nếu có cấu hình key
+        if os.getenv("APOLLO_API_KEY"):
+            a_res = await resolve_via_apollo(first_name, last_name, domain)
+            if a_res and a_res.get("email"):
+                return a_res
 
-    return resolve_via_internal_smtp(first_name, last_name, domain)
+        # Không sinh email giả — trả về None để hệ thống chuyển sang Fallback BR-01.2
+        return None

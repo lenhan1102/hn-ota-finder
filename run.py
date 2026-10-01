@@ -44,6 +44,12 @@ try:
 except ImportError:
     pass
 
+# Dọn dẹp PLAYWRIGHT_BROWSERS_PATH nếu trỏ tới đường dẫn không tồn tại (vd: /home/tide/... trên macOS)
+pw_path = os.getenv("PLAYWRIGHT_BROWSERS_PATH")
+if pw_path and not os.path.exists(pw_path):
+    del os.environ["PLAYWRIGHT_BROWSERS_PATH"]
+
+
 BASE_DIR = Path(__file__).resolve().parent
 SRC_DIR = BASE_DIR / "src"
 if str(SRC_DIR) not in sys.path:

@@ -196,11 +196,11 @@ def insert_place_verdicts(verdicts_data):
     for v in verdicts_data:
         if not v.get("db_place_id"):
             continue
-        is_alive = 1 if (v.get("is_alive") or v.get("reachable") or v.get("real")) else 0
-        has_flight_form = 1 if (v.get("has_flight_form") or v.get("flightticketing") or v.get("onlinesearch")) else 0
-        has_iata = 1 if (v.get("has_iata") or v.get("iata")) else 0
+        is_alive = 1 if (v.get("is_alive") or v.get("reachable") or v.get("real") or v.get("loaded")) else 0
+        has_flight_form = 1 if (v.get("has_flight_form") or v.get("flightticketing") or v.get("onlinesearch") or v.get("flight_form")) else 0
+        has_iata = 1 if (v.get("has_iata") or v.get("iata") or v.get("iata_found")) else 0
         has_iframe = 1 if (v.get("has_iframe") or v.get("iframe")) else 0
-        error_msg = v.get("error") or v.get("evidence") or ""
+        error_msg = v.get("error") or v.get("error_message") or v.get("evidence") or ""
         data.append((
             str(uuid.uuid4()),
             str(v.get("db_place_id")),
@@ -614,23 +614,7 @@ def get_job_steps_data_from_db(job_id):
                                     "total_leads": len(qual) + len(drop)
                                 }
                                 
-                                # Khôi phục cờ Đạt chuẩn cho Step 4 nếu dữ liệu DB cũ bị ghi 0
-                                if steps_data["step4"]["summary"]["accepted_count"] == 0 and len(qual) > 0:
-                                    qual_urls = {str(l.get("website", "")).strip().rstrip("/").lower() for l in qual if l.get("website")}
-                                    qual_names = {str(l.get("name", "")).strip().lower() for l in qual if l.get("name")}
-                                    for v in steps_data["step4"]["verdicts"]:
-                                        v_web = str(v.get("website", "")).strip().rstrip("/").lower()
-                                        v_title = str(v.get("title", "")).strip().lower()
-                                        if v_web in qual_urls or v_title in qual_names:
-                                            v["reachable"] = 1
-                                            v["flightticketing"] = 1
-                                            v["onlinesearch"] = 1
-                                            v["is_accepted"] = 1
-                                            v["verdict_status"] = "Đạt chuẩn: Có bán vé máy bay"
-                                    
-                                    acc_cnt = sum(1 for v in steps_data["step4"]["verdicts"] if v.get("is_accepted"))
-                                    steps_data["step4"]["summary"]["accepted_count"] = acc_cnt
-                                    steps_data["step4"]["summary"]["rejected_count"] = len(steps_data["step4"]["verdicts"]) - acc_cnt
+
                         except Exception as ex:
                             print(f"Lỗi đọc fallback json {json_file_path}: {ex}")
                     else:
@@ -674,6 +658,39 @@ def get_job_steps_data_from_db(job_id):
                         "dropped_count": len(drop),
                         "total_leads": len(qual) + len(drop)
                     }
+
+                # Đồng bộ trạng thái Đạt chuẩn cho Step 4 nếu DB bị ghi 0 nhưng Step 5 có Qualified leads
+                final_qual = steps_data["step5"].get("qualified_leads") or []
+                if steps_data["step4"]["summary"]["accepted_count"] == 0 and len(final_qual) > 0:
+                    def _norm_w(w):
+                        if not w:
+                            return ""
+                        s = str(w).strip().lower()
+                        for pfx in ["https://", "http://", "www."]:
+                            if s.startswith(pfx):
+                                s = s[len(pfx):]
+                        return s.rstrip("/").split("/")[0].split("?")[0]
+
+                    qual_doms = {_norm_w(l.get("website", "")) for l in final_qual if l.get("website")}
+                    qual_names = {str(l.get("name") or l.get("title") or l.get("company_name", "")).strip().lower() for l in final_qual}
+                    
+                    for v in steps_data["step4"]["verdicts"]:
+                        v_dom = _norm_w(v.get("website", ""))
+                        v_title = str(v.get("title", "")).strip().lower()
+                        if (v_dom and v_dom in qual_doms) or (v_title and v_title in qual_names):
+                            matched_lead = next((l for l in final_qual if (_norm_w(l.get("website", "")) == v_dom and v_dom) or (str(l.get("title") or l.get("company_name", "")).strip().lower() == v_title and v_title)), None)
+                            v["reachable"] = 1
+                            v["flightticketing"] = 1
+                            v["onlinesearch"] = 1
+                            v["is_accepted"] = 1
+                            v["verdict_status"] = "Đạt chuẩn: Có bán vé máy bay"
+                            if matched_lead and (matched_lead.get("iata_visible") or matched_lead.get("iata") or matched_lead.get("iata_number")):
+                                v["iata"] = 1
+
+                    acc_cnt = sum(1 for v in steps_data["step4"]["verdicts"] if v.get("is_accepted"))
+                    steps_data["step4"]["summary"]["accepted_count"] = acc_cnt
+                    steps_data["step4"]["summary"]["rejected_count"] = len(steps_data["step4"]["verdicts"]) - acc_cnt
+                    steps_data["step4"]["summary"]["iata_count"] = sum(1 for v in steps_data["step4"]["verdicts"] if v.get("iata"))
 
         return steps_data
     except Exception as e:

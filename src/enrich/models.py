@@ -1,93 +1,127 @@
-"""
-models.py — Data models và Enums cho module Enrich (Contact Discovery & Email Finder).
-"""
-
 from enum import Enum
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
 class DiscoveryMethod(str, Enum):
-    """Phương pháp tìm kiếm nhân sự."""
     GOOGLE_DORKING = "google_dorking"
     PLAYWRIGHT_LINKEDIN = "playwright_linkedin"
 
 
 class EnrichmentProvider(str, Enum):
-    """Nhà cung cấp API tìm email."""
+    AUTO = "auto"
     HUNTER = "hunter"
     APOLLO = "apollo"
     INTERNAL_SMTP = "internal_smtp"
-    AUTO = "auto"
 
 
-class ContactTier(str, Enum):
-    """Phân loại mức độ ưu tiên của contact."""
-    TIER_1 = "tier_1"   # C-level: CEO, Founder, MD
-    TIER_2 = "tier_2"   # Head of Business Development, Partnerships, Ticketing
-    TIER_3 = "tier_3"   # Manager, Supervisor
-    TIER_4 = "tier_4"   # Email phòng ban (sales@, booking@, info@...)
+class ContactTier(int, Enum):
+    TIER_1 = 1  # CEO, Founder, Co-Founder, Managing Director, Owner
+    TIER_2 = 2  # Head of BD, Head of Partnerships, BD Director
+    TIER_3 = 3  # Head of Flight, Air Ticketing Manager, Head of Ticketing
+    TIER_4 = 4  # Fallback: partnerships@, contracting@, b2b@
 
 
 class ContactPerson(BaseModel):
-    """Thông tin một nhân sự được tìm thấy."""
-    full_name: str = ""
-    first_name: str = ""
-    last_name: str = ""
-    title: str = ""
-    tier: ContactTier = ContactTier.TIER_4
-    email: str = ""
-    confidence_score: float = 0.0
-    source: str = ""          # "google_dorking" | "playwright_linkedin" | "website_fallback"
-    linkedin_url: str = ""
-    discovery_method: str = ""
-    provider_used: str = ""   # "hunter" | "apollo" | "internal_smtp"
+    full_name: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    title: Optional[str] = None
+    tier: int = Field(description="Tier 1, 2, 3 or 4")
+    tier_label: str = Field(description="e.g. 'Tier 1: CEO', 'Tier 2: Head of BD', 'Fallback Department Contact'")
+    email: Optional[str] = None
+    is_primary: bool = False
+    linkedin_url: Optional[str] = None
+    source: str = Field(description="google_dorking | playwright_linkedin | hunter | apollo | website_fallback")
+    verification_status: str = Field(default="unverified", description="verified | unverified | catch_all | invalid | fallback")
+    confidence_score: float = Field(default=0.0, description="0.0 - 100.0 score")
 
 
 class EnrichmentOptions(BaseModel):
-    """Tuỳ chọn do FE gửi lên để điều phối luồng enrich."""
-    discovery_method: DiscoveryMethod = DiscoveryMethod.GOOGLE_DORKING
-    provider: EnrichmentProvider = EnrichmentProvider.AUTO
-    linkedin_cookie: str = ""    # cookie 'li_at' nếu dùng Playwright
-    max_contacts: int = Field(default=5, ge=1, le=20)
-    country: str = "vietnam"
+    discovery_method: DiscoveryMethod = Field(
+        default=DiscoveryMethod.GOOGLE_DORKING,
+        description="Option for FE: 'google_dorking' (Recommended, fast, safe) or 'playwright_linkedin' (Deep scan browser)"
+    )
+    provider: EnrichmentProvider = Field(
+        default=EnrichmentProvider.AUTO,
+        description="Option for FE: 'hunter', 'apollo', 'internal_smtp', or 'auto'"
+    )
+    linkedin_cookie: Optional[str] = Field(
+        default=None,
+        description="Optional LinkedIn 'li_at' session cookie if using playwright_linkedin"
+    )
+    check_website_fallback: bool = Field(
+        default=True,
+        description="If True, automatically scrape website for Tier 4 emails (partnerships@) when personal email not found"
+    )
 
 
 class SingleEnrichRequest(BaseModel):
-    """Request enrich một lead duy nhất."""
     company_name: str
     domain: str
-    country: str = "vietnam"
-    options: Optional[EnrichmentOptions] = None
+    country: Optional[str] = "vietnam"
+    lead_id: Optional[str] = None
+    options: Optional[EnrichmentOptions] = Field(default_factory=EnrichmentOptions)
 
 
 class BatchEnrichRequest(BaseModel):
-    """Request enrich nhiều lead cùng lúc."""
     leads: List[SingleEnrichRequest]
-    options: Optional[EnrichmentOptions] = None  # override mặc định cho toàn batch
+    options: Optional[EnrichmentOptions] = Field(default_factory=EnrichmentOptions)
+
+
+class EnrichJobCreateRequest(BaseModel):
+    mode: str = Field(default="single", description="'single' hoặc 'batch'")
+    lead: Optional[SingleEnrichRequest] = None
+    leads: Optional[List[SingleEnrichRequest]] = None
+    options: Optional[EnrichmentOptions] = None
+
+
+class DebugStep(BaseModel):
+    """Một bước trong quá trình Enrich — dùng để FE hiển thị debug trace."""
+    step: str = Field(description="Tên bước, vd: discovery, email_resolution, website_fallback")
+    status: str = Field(description="success | failed | skipped | no_result")
+    detail: str = Field(description="Mô tả ngắn gọn kết quả")
+    duration_ms: Optional[float] = Field(default=None, description="Thời gian xử lý (ms)")
+    data: Optional[Dict[str, Any]] = Field(default=None, description="Dữ liệu kèm theo")
 
 
 class EnrichmentResult(BaseModel):
-    """Kết quả enrich một lead."""
     company_name: str
     domain: str
+    country: Optional[str] = None
+    primary_email: Optional[str] = None
     primary_contact: Optional[ContactPerson] = None
-    all_contacts: List[ContactPerson] = []
-    primary_email: str = ""
-    discovery_used: str = ""
-    provider_used: str = ""
-    rule_applied: str = ""      # BR-01.1 / BR-01.2 / BR-01.3
-    status: str = "ok"          # "ok" | "missing_contact" | "error"
-    error_message: str = ""
-    elapsed_sec: float = 0.0
+    all_contacts: List[ContactPerson] = Field(default_factory=list)
+    rule_applied: str = Field(description="BR-01.1 | BR-01.2 | BR-01.3")
+    status: str = Field(description="success | missing_contact | failed")
+    greeting_name: str = Field(default="Team", description="e.g. 'Mr. Tan', 'Ms. Aye', or 'Team'")
+    discovery_method_used: str
+    provider_used: str
+    execution_time_seconds: float = 0.0
+    error_message: Optional[str] = None
+    methods_attempted: List[str] = Field(
+        default_factory=list,
+        description="Danh sách các phương thức và công cụ đã thực tế chạy trong pipeline"
+    )
+    primary_source: Optional[str] = Field(
+        default=None,
+        description="Nguồn gốc thực sự của email chính (hunter | apollo | website_fallback | google_dorking)"
+    )
+    rule_description: Optional[str] = Field(
+        default=None,
+        description="Mô tả chi tiết quy tắc BR-01 đã áp dụng"
+    )
+    logs: List[str] = Field(
+        default_factory=list,
+        description="Nhật ký chi tiết quá trình quét để FE hiển thị"
+    )
+    debug_trace: List[DebugStep] = Field(
+        default_factory=list,
+        description="Các bước thực hiện theo thứ tự, dùng để FE hiển thị debug panel"
+    )
 
 
 class EnrichmentOptionsMetadata(BaseModel):
-    """Metadata mô tả các tuỳ chọn có sẵn — dùng để render FE form."""
-    discovery_methods: List[str] = [m.value for m in DiscoveryMethod]
-    providers: List[str] = [p.value for p in EnrichmentProvider]
-    has_hunter_key: bool = False
-    has_apollo_key: bool = False
-    has_serper_key: bool = False
-    has_serpapi_key: bool = False
-    has_linkedin_cookie: bool = False
+    discovery_methods: List[dict]
+    enrichment_providers: List[dict]
+    tier_definitions: List[dict]
