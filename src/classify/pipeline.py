@@ -52,7 +52,7 @@ def stage1_exclude(df: pd.DataFrame, country: str) -> tuple[pd.DataFrame, pd.Dat
         match = cat_lower == exc_cat
         new_matches = match & ~exclude_mask
         for idx in df[new_matches].index:
-            exclusion_reasons.append((idx, f"Danh mục bị loại trừ: {exc_cat}"))
+            exclusion_reasons.append((idx, f"Excluded category: {exc_cat}"))
         exclude_mask |= match
 
     # --- Rule 2: Airline offices (not third-party agencies) ---
@@ -61,7 +61,7 @@ def stage1_exclude(df: pd.DataFrame, country: str) -> tuple[pd.DataFrame, pd.Dat
         category = str(row.get('category', ''))
         if utils.is_airline_office(title, category):
             exclude_mask[idx] = True
-            exclusion_reasons.append((idx, f"Văn phòng hãng hàng không (không phải đại lý cấp 2/3): {title}"))
+            exclusion_reasons.append((idx, f"Direct airline office (not third-party agency): {title}"))
 
     # --- Rule 3: Permanently/temporarily closed ---
     if 'status' in df.columns:
@@ -69,7 +69,7 @@ def stage1_exclude(df: pd.DataFrame, country: str) -> tuple[pd.DataFrame, pd.Dat
         closed = status_lower.str.contains('permanently closed|temporarily closed', na=False)
         new_closed = closed & ~exclude_mask
         for idx in df[new_closed].index:
-            exclusion_reasons.append((idx, "Doanh nghiệp đã đóng cửa (Permanently/Temporarily closed)"))
+            exclusion_reasons.append((idx, "Permanently or temporarily closed"))
         exclude_mask |= closed
 
     # --- Rule 4: Zero-signal records ---
@@ -81,7 +81,7 @@ def stage1_exclude(df: pd.DataFrame, country: str) -> tuple[pd.DataFrame, pd.Dat
     zero_signal = no_website & no_email & low_reviews & no_phone
     new_zero = zero_signal & ~exclude_mask
     for idx in df[new_zero].index:
-        exclusion_reasons.append((idx, "Thiếu thông tin liên hệ: Không có website, không email, không số điện thoại và dưới 2 đánh giá"))
+        exclusion_reasons.append((idx, "Missing contact info: No website, email, phone, and under 2 reviews"))
     exclude_mask |= zero_signal
 
     # --- Rule 5: Deduplicate by CID (keep first occurrence) ---
@@ -89,7 +89,7 @@ def stage1_exclude(df: pd.DataFrame, country: str) -> tuple[pd.DataFrame, pd.Dat
         dup_mask = df.duplicated(subset='cid', keep='first') & df['cid'].notna()
         new_dups = dup_mask & ~exclude_mask
         for idx in df[new_dups].index:
-            exclusion_reasons.append((idx, "Trùng lặp mã Google CID"))
+            exclusion_reasons.append((idx, "Duplicate Google CID"))
         exclude_mask |= dup_mask
 
     # Build excluded dataframe with reasons
@@ -100,7 +100,7 @@ def stage1_exclude(df: pd.DataFrame, country: str) -> tuple[pd.DataFrame, pd.Dat
             reason_map[idx] += f"; {reason}"
         else:
             reason_map[idx] = reason
-    excluded_df['exclusion_reason'] = excluded_df.index.map(lambda x: reason_map.get(x, 'Không rõ'))
+    excluded_df['exclusion_reason'] = excluded_df.index.map(lambda x: reason_map.get(x, 'Unknown'))
 
     kept_df = df[~exclude_mask].copy()
 
@@ -394,7 +394,7 @@ def classify_air_ticketing(feat: pd.Series) -> tuple[str, list[str]]:
     elif feat['category_lower'] == 'visa consulting service' and feat['flight_in_reviews']:
         return 'potential', reasons + ['Visa + flight combo']
     elif feat['is_proper_domain'] and any(cat in feat['category_lower'] for cat in [c.lower() for c in config.OTA_PRIMARY_CATEGORIES]):
-        return 'potential', reasons + ['Đại lý/công ty du lịch có website riêng (giữ lại để Chromium kiểm tra form vé)']
+        return 'potential', reasons + ['Travel agency with proper website (kept for browser verification)']
     else:
         return 'none', reasons
 
@@ -604,8 +604,8 @@ def run_pipeline(input_data, country: str, output_dir: str = None, return_exclud
             reasons_str = "; ".join(ota_reasons + air_reasons)
             print(f"       [+] GIỮ LẠI [Heuristic]: {title_str[:30]:<30} | Phân loại: OTA={ota_class}, Air={air_class} | Lý do: {reasons_str[:70]}")
         else:
-            reason_drop = "Không có tín hiệu bán vé máy bay hoặc đặt vé trực tuyến"
-            print(f"       [-] LOẠI BỎ [Heuristic]: {title_str[:30]:<30} | Danh mục: {cat_str[:20]} | Website: {web_str[:25]} | Lý do: {reason_drop}")
+            reason_drop = "No flight ticketing or online booking signals detected"
+            print(f"       [-] EXCLUDED [Heuristic]: {title_str[:30]:<30} | Category: {cat_str[:20]} | Website: {web_str[:25]} | Reason: {reason_drop}")
             all_excluded_records.append({
                 'db_place_id': orig_row.get('db_place_id'),
                 'title': "" if utils.pd_isna(orig_row.get('title')) else str(orig_row.get('title')),

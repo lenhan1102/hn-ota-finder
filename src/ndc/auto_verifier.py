@@ -73,24 +73,26 @@ def norm_domain(url_or_domain: str) -> str:
 
 def call_llm_for_verdict(domain: str, title: str, snippet: str, api_key: str, provider: str = "openai") -> dict | None:
     prompt = f"""
-Ban la chuyen vien tham dinh dai ly du lich de ban noi dung ve may bay qua NDC/IATA.
-Danh gia domain: {domain}
+You are an expert travel agency verification analyst for NDC/IATA air ticketing distribution.
+Evaluate domain: {domain}
 Title: {title}
 Snippet: {snippet}
 
-Tra ve DUY NHAT 1 JSON object co dung cac truong sau (gia tri 0 hoac 1, rieng conf la so thuc 0.0-1.0, evidence va iata_ev la chuoi):
+CRITICAL: All explanations and the "evidence" field MUST be written in concise, professional English.
+
+Return ONLY 1 valid JSON object with these exact fields (values 0 or 1, conf is float 0.0-1.0, evidence and iata_ev are strings):
 {{
   "domain": "{domain}",
-  "real": 0 hoac 1,
-  "ota": 0 hoac 1,
-  "airline": 0 hoac 1,
-  "flightticketing": 0 hoac 1,
-  "onlinesearch": 0 hoac 1,
-  "iata": 0 hoac 1,
-  "iata_ev": "not found" hoac chuoi so IATA,
-  "puretour": 0 hoac 1,
+  "real": 0 or 1,
+  "ota": 0 or 1,
+  "airline": 0 or 1,
+  "flightticketing": 0 or 1,
+  "onlinesearch": 0 or 1,
+  "iata": 0 or 1,
+  "iata_ev": "not found" or "IATA numeric string",
+  "puretour": 0 or 1,
   "conf": 0.85,
-  "evidence": "tom tat bang chung"
+  "evidence": "concise English summary of evidence observed on website"
 }}
 """
     try:
@@ -117,7 +119,7 @@ Tra ve DUY NHAT 1 JSON object co dung cac truong sau (gia tri 0 hoac 1, rieng co
             resp = httpx.post(
                 url,
                 headers={"Content-Type": "application/json"},
-                json={"contents": [{"parts": [{"text": prompt + "\nTra ve JSON hop le."}]}]},
+                json={"contents": [{"parts": [{"text": prompt + "\nReturn valid JSON only."}]}]},
                 timeout=30.0,
             )
             if resp.status_code == 200:
@@ -209,7 +211,7 @@ def run_auto_verification(
                     "iata_ev": "not found",
                     "puretour": 0,
                     "conf": 1.0,
-                    "evidence": "Ứng viên không có website (bị loại ở bước Thẩm định)",
+                    "evidence": "Candidate has no website (rejected in Web Verification)",
                     "reachable": 0,
                 })
 
@@ -291,13 +293,11 @@ def run_auto_verification(
 
             # DNS Pre-check sieu nhanh (0.02s) de tranh ngam timeout vo tan tren site chet/NXDOMAIN
             if not check_domain_resolves(dom):
-                print(f"       [TRUY_CẬP_THẤT_BẠI] Tên miền không tồn tại hoặc lỗi phân giải DNS (NXDOMAIN)", flush=True)
-                print(f"       [-] Bị loại [Thẩm định]: {dom} | Lý do: Tên miền không tồn tại hoặc lỗi phân giải DNS (NXDOMAIN)", flush=True)
-                if _log:
-                    _log.site_skip(i, len(unique_sites), dom, "NXDOMAIN / DNS fail")
+                print(f"       [ACCESS_FAILED] Domain does not exist or DNS resolution error (NXDOMAIN)", flush=True)
+                print(f"       [-] Rejected [Verification]: {dom} | Reason: Domain does not exist or DNS resolution error (NXDOMAIN)", flush=True)
                 probe_res = {
                     "loaded": False,
-                    "error": "DNS_PROBE_FINISHED_NXDOMAIN (Tên miền không tồn tại hoặc chết DNS)",
+                    "error": "DNS_PROBE_FINISHED_NXDOMAIN (Domain does not exist or DNS dead)",
                     "name": item["name"],
                     "url": url,
                     "domain": dom,
@@ -315,14 +315,14 @@ def run_auto_verification(
                     "iata_ev": "not found",
                     "puretour": 0,
                     "conf": 0.0,
-                    "evidence": "Website đã chết (NXDOMAIN / Lỗi phân giải DNS)",
+                    "evidence": "Website is dead (NXDOMAIN / DNS resolution error)",
                     "reachable": 0,
                 })
-                _fire_progress(i, dom, "-> Không thể phân giải DNS (NXDOMAIN)")
+                _fire_progress(i, dom, "-> DNS resolution failed (NXDOMAIN)")
                 continue
 
             # Bắn tín hiệu log lên UI ngay trước khi bắt đầu tải trang
-            _fire_progress(i, dom, "-> Đang kết nối và kiểm tra...")
+            _fire_progress(i, dom, "-> Connecting and verifying...")
 
             # ── Watchdog: hard timeout per-site ──────────────────────────────
             # Nếu probe() hoặc ctx.close() bị treo quá SITE_HARD_TIMEOUT_SEC giây,
@@ -437,32 +437,26 @@ def run_auto_verification(
             _site_elapsed = time.time() - _site_start_ts
             title_p = probe_res.get("title", "")[:40]
             if not probe_res.get("loaded"):
-                err_clean = probe_res.get("error", "Lỗi tải trang hoặc chặn bot")
-                print(f"       [TRUY_CẬP_THẤT_BẠI] | Tiêu đề: '{title_p}'", flush=True)
-                print(f"       [-] Bị loại [Thẩm định]: {dom} | Lý do: Không thể truy cập website ({err_clean[:60]})", flush=True)
-                if _log:
-                    _log.site_done(i, len(unique_sites), dom, _site_elapsed, f"DEAD | {err_clean[:80]}")
+                err_clean = probe_res.get("error", "Page load error or bot blocked")
+                print(f"       [ACCESS_FAILED] | Title: '{title_p}'", flush=True)
+                print(f"       [-] Rejected [Verification]: {dom} | Reason: Unreachable website ({err_clean[:60]})", flush=True)
             else:
                 has_flight = bool(verdict.get("flightticketing"))
                 if has_flight:
-                    print(f"       [TRUY_CẬP_THÀNH_CÔNG] | Tiêu đề: '{title_p}' -> CÓ BÁN VÉ MÁY BAY (Đủ điều kiện)", flush=True)
-                    form_txt = "Có" if probe_res.get("flight_form") else "Không"
-                    iata_txt = probe_res.get("iata_number") or ("Có" if probe_res.get("iata_found") else "Không")
-                    print(f"       [+] Đạt chuẩn [Thẩm định]: {dom} | Lý do: Phát hiện nội dung bán vé máy bay (Form vé: {form_txt}, IATA: {iata_txt})", flush=True)
-                    if _log:
-                        _log.site_done(i, len(unique_sites), dom, _site_elapsed, f"LOADED+FLIGHT | form={form_txt} iata={iata_txt}")
+                    print(f"       [ACCESS_SUCCESS] | Title: '{title_p}' -> SELLS AIR TICKETS (Qualified)", flush=True)
+                    form_txt = "Yes" if probe_res.get("flight_form") else "No"
+                    iata_txt = probe_res.get("iata_number") or ("Yes" if probe_res.get("iata_found") else "No")
+                    print(f"       [+] Qualified [Verification]: {dom} | Reason: Flight ticketing flow detected (Ticket form: {form_txt}, IATA: {iata_txt})", flush=True)
                 else:
-                    print(f"       [TRUY_CẬP_THÀNH_CÔNG] | Tiêu đề: '{title_p}' -> KHÔNG BÁN VÉ", flush=True)
-                    print(f"       [-] Không đạt chuẩn [Thẩm định]: {dom} | Lý do: Website không có nội dung bán vé máy bay (Tour thuần hoặc ngành khác)", flush=True)
-                    if _log:
-                        _log.site_done(i, len(unique_sites), dom, _site_elapsed, "LOADED | no-flight")
+                    print(f"       [ACCESS_SUCCESS] | Title: '{title_p}' -> NO FLIGHT TICKETING", flush=True)
+                    print(f"       [-] Unqualified [Verification]: {dom} | Reason: No flight ticketing detected (Pure tour or other industry)", flush=True)
 
             if probe_res.get("flight_form"):
-                print(f"          -> Chi tiết Form vé: {probe_res.get('flight_form_detail')}", flush=True)
+                print(f"          -> Flight form details: {probe_res.get('flight_form_detail')}", flush=True)
             if probe_res.get("iata_found"):
-                print(f"          -> Chi tiết IATA: {probe_res.get('iata_number') or 'Có'}", flush=True)
+                print(f"          -> IATA details: {probe_res.get('iata_number') or 'Yes'}", flush=True)
                 
-            detail_tag = "-> Đạt chuẩn (Có bán vé)" if verdict.get("flightticketing") else ("-> Không đạt chuẩn (Không bán vé)" if probe_res.get("loaded") else f"-> Không thể truy cập ({probe_res.get('error', 'Timeout/Error')[:30]})")
+            detail_tag = "-> Qualified (Sells air tickets)" if verdict.get("flightticketing") else ("-> Unqualified (No flight ticketing)" if probe_res.get("loaded") else f"-> Unreachable ({probe_res.get('error', 'Timeout/Error')[:30]})")
             _fire_progress(i, dom, detail_tag)
 
         browser.close()

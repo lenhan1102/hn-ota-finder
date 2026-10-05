@@ -84,39 +84,39 @@ COLS = ["domain", "real", "ota", "airline", "flightticketing", "onlinesearch",
 # ============================================================================
 def classify(r):
     if getattr(r, "domain", "") == "-":
-        return "DROP", "Ứng viên không có website"
+        return "DROP", "Candidate has no website"
     
     work_dom = norm_domain(getattr(r, "workurl", ""))
     if work_dom in {"klook.com", "traveloka.com", "trip.com", "agoda.com", "booking.com", "expedia.com", "skyscanner.com", "kayak.com", "kkday.com"}:
-        return "DROP", f"Website thực tế là Mega-OTA/Nền tảng du lịch ({work_dom}) — chỉ là link affiliate hoặc không độc lập"
+        return "DROP", f"Actual website is a Mega-OTA / travel platform ({work_dom}) — affiliate link or non-independent"
         
     if r.domain in PEERS:
-        return "DROP", "Đối tác B2B / Wholesaler / Travel-tech (không phải đại lý bán vé lẻ cho khách)"
+        return "DROP", "B2B Partner / Wholesaler / Travel-tech (not a retail ticketing agency)"
     if r.airline:
-        return "DROP", "Chính hãng hàng không (nguồn cung NDC, không phải đại lý khách hàng)"
+        return "DROP", "Direct airline (NDC supply source, not target client)"
     if not r.real:
-        return "DROP", "Không phải website công ty thực tế / không thể truy cập"
+        return "DROP", "Not an actual business website / unreachable"
     if not r.ota:
-        return "DROP", "Không phải đại lý du lịch / OTA"
+        return "DROP", "Not a travel agency / OTA"
     if r.puretour or not r.flightticketing:
-        return "DROP", "Không bán vé máy bay (tour thuần túy / phi hàng không)"
+        return "DROP", "Does not sell air tickets (pure tour operator / non-aviation)"
     if getattr(r, "dead", False):
-        return "DROP", "Tên miền không còn phân giải DNS — website đã chết"
+        return "DROP", "Domain no longer resolves via DNS — dead website"
     if REQUIRE_ONLINE_SEARCH and not r.onlinesearch:
-        return "DROP", "Không có công cụ tìm kiếm vé trực tuyến (đặt chỗ thủ công / liên hệ)"
+        return "DROP", "No online flight booking tool (manual booking / inquiry only)"
 
-    # --- Đã qualify: có bán vé máy bay ---
+    # --- Qualified: sells air tickets ---
     if not getattr(r, "reach", True):
-        return "Tier 3", ("Bán vé máy bay nhưng website không vào được kể cả bằng trình duyệt thực (chặn bot/vùng hoặc down) — cần kiểm tra tay")
+        return "Tier 3", "Sells air tickets but website unreachable even with real browser (bot/geo-blocked or down) — manual check needed"
     if r.onlinesearch and r.iata:
-        return "Tier 1", "Tìm kiếm vé trực tuyến + Có chứng nhận IATA hiển thị"
+        return "Tier 1", "Online flight search + Displayed IATA accreditation"
     if r.onlinesearch:
-        return "Tier 2", "Tìm kiếm vé trực tuyến (đã kiểm chứng trên website thực tế)"
+        return "Tier 2", "Online flight search (verified on live website)"
     if r.iata:
-        return "Tier 2", "Đại lý vé máy bay IATA-accredited (đã kiểm chứng trên website thực tế)"
+        return "Tier 2", "IATA-accredited flight agency (verified on live website)"
     if r.conf < 0.5:
-        return "Tier 3", "Bán vé máy bay — độ tin cậy thấp, cần xác minh thủ công"
-    return "Tier 3", "Consolidator vé máy bay (website hoạt động; offline / không hiển thị IATA) — Tiềm năng NDC"
+        return "Tier 3", "Sells air tickets — low confidence, manual verification needed"
+    return "Tier 3", "Flight consolidator (active website; offline / no visible IATA) — NDC potential"
 
 
 # ============================================================================
@@ -353,9 +353,9 @@ def run_tiering(verdicts_data, country, output_json=None, output_xlsx=None, reve
         dom_val = row.get("domain", "")
         reason_val = row.get("reason", "")
         if tier_val == "DROP":
-            print(f"       [-] BỊ LOẠI [Phân Tier - DROP]: {name_val:<32} | Domain: {dom_val} | Lý do: {reason_val}")
+            print(f"       [-] DROPPED [Tiering - DROP]: {name_val:<32} | Domain: {dom_val} | Reason: {reason_val}")
         else:
-            print(f"       [+] ĐẠT CHUẨN [{tier_val}]: {name_val:<32} | Domain: {dom_val} | Lý do: {reason_val}")
+            print(f"       [+] QUALIFIED [{tier_val}]: {name_val:<32} | Domain: {dom_val} | Reason: {reason_val}")
 
     from datetime import datetime
 

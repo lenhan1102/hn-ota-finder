@@ -271,7 +271,7 @@ def check_domain_resolves(url_or_domain: str, timeout: float = 1.0) -> bool:
 def probe(page, url, timeout_ms: int = 7000):
     """Thu lan luot https:// -> https://www. -> http:// truoc khi ket luan site chet."""
     if not check_domain_resolves(url):
-        return {"loaded": False, "error": "DNS_PROBE_FINISHED_NXDOMAIN (Tên miền không tồn tại hoặc chết DNS)"}
+        return {"loaded": False, "error": "DNS_PROBE_FINISHED_NXDOMAIN (Domain does not exist or DNS dead)"}
 
     # Tu dong tat dialog / alert de tranh treo tien trinh Playwright
     try:
