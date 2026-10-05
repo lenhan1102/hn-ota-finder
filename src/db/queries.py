@@ -510,11 +510,11 @@ def get_job_steps_data_from_db(job_id):
                     is_accepted = 1 if (is_reachable and has_ticket) else 0
                     
                     if not is_reachable:
-                        verdict_status = "Bị loại: Không thể truy cập website"
+                        verdict_status = "Rejected: Unreachable website"
                     elif not has_ticket:
-                        verdict_status = "Bị loại: Không có cổng đặt vé máy bay"
+                        verdict_status = "Rejected: No flight ticketing flow detected"
                     else:
-                        verdict_status = "Đạt chuẩn: Có bán vé máy bay"
+                        verdict_status = "Qualified: Sells air tickets"
                         
                     verdicts.append({
                         "website": web or "",
@@ -626,7 +626,7 @@ def get_job_steps_data_from_db(job_id):
                                 "company_name": v.get("title") or "–",
                                 "website": v.get("website") or "",
                                 "tier": "Tier 1",
-                                "reason": v.get("verdict_status") or "Đạt chuẩn",
+                                "reason": v.get("verdict_status") or "Qualified",
                             }
                             for v in s4_verdicts
                             if v.get("is_accepted")
@@ -637,7 +637,7 @@ def get_job_steps_data_from_db(job_id):
                                 "company_name": v.get("title") or "–",
                                 "website": v.get("website") or "",
                                 "tier": "Dropped",
-                                "reason": v.get("verdict_status") or v.get("error") or "Không đạt tiêu chuẩn",
+                                "reason": v.get("verdict_status") or v.get("error") or "Unqualified",
                             }
                             for v in s4_verdicts
                             if not v.get("is_accepted")
@@ -683,7 +683,7 @@ def get_job_steps_data_from_db(job_id):
                             v["flightticketing"] = 1
                             v["onlinesearch"] = 1
                             v["is_accepted"] = 1
-                            v["verdict_status"] = "Đạt chuẩn: Có bán vé máy bay"
+                            v["verdict_status"] = "Qualified: Sells air tickets"
                             if matched_lead and (matched_lead.get("iata_visible") or matched_lead.get("iata") or matched_lead.get("iata_number")):
                                 v["iata"] = 1
 
